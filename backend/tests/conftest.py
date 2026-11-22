@@ -2,11 +2,18 @@ import pytest
 from typing import AsyncGenerator
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.database.connection import engine
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 async def async_client() -> AsyncGenerator[AsyncClient, None]:
     """Provides an asynchronous test client for API testing."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def cleanup_engine():
+    yield
+    await engine.dispose()

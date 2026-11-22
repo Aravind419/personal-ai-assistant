@@ -193,3 +193,18 @@ Before writing code or running implementation tools in any session:
 5. Inspect current Git changes (`git status`, `git diff`) without overwriting user work.
 6. Verify the last known verified state by running tests.
 7. Identify the exact next task recorded under "Next Implementation Task" in [docs/PROJECT_STATUS.md](file:///d:/personal-ai-assistent/docs/PROJECT_STATUS.md) and resume seamlessly.
+
+---
+
+## 11. MANDATORY DOCUMENTATION AND PROJECT CONTINUITY RULES
+
+1. **Mandatory Pre-Task Reading**: Before every development task or phase, read `AGENTS.md` and all relevant documentation inside `docs/`, including project overview, architecture, roadmap, project status, decisions, changelog, development, and security documentation.
+2. **Ground Truth Code & Schema Inspection**: Inspect the actual source code, database schema, migrations, APIs, and tests to verify the documented implementation state. Do not rely on assumptions.
+3. **No Conversational Memory Assumptions**: Never assume previous conversation history is sufficient or available, even when using the same AI agent. Every session must be anchored in the repository files.
+4. **Continuous Status & History Logging**: Maintain `PROJECT_STATUS.md` and `CHANGELOG.md` after every meaningful development task.
+5. **Proactive Documentation Synchronization**: Update other relevant documentation whenever architecture, dependencies, APIs, database schemas, security, or workflows change.
+6. **Mandatory Stopping-Point Record**: Before ending a session, record completed work, verified work, incomplete work, bugs, blockers, test results, and the exact next task in `PROJECT_STATUS.md`.
+7. **Complete Agent Interchangeability**: Make the project understandable and resumable by a completely new AI agent without access to previous conversation history.
+8. **Strict Verification Integrity**: Never mark something `VERIFIED` without actual successful verification (running tests and builds).
+9. **Preserve Decision & Evolution History**: Preserve historical documentation and existing project decisions; never erase prior context or accepted ADRs without a formal decision update.
+10. **Repository as Source of Truth**: Treat the repository documentation and actual implementation as the long-term, authoritative source of truth.

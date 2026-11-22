@@ -1,6 +1,7 @@
 import time
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from sqlalchemy.pool import NullPool
 from sqlalchemy import text
 from app.core.config import settings
 from app.core.logging import logger
@@ -13,13 +14,11 @@ def get_engine_url() -> str:
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
-# Create global async engine
+# Create async engine with NullPool to ensure safe execution across async event loops
 engine: AsyncEngine = create_async_engine(
     get_engine_url(),
     echo=False,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    poolclass=NullPool,
 )
 
 async def check_database_connection(timeout_seconds: float = 3.0) -> Dict[str, Any]:

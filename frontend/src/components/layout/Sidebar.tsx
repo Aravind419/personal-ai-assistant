@@ -28,9 +28,9 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     id: 'chat',
     label: 'Chat',
     iconName: 'MessageSquare',
-    description: 'Direct conversational interface to the personal assistant.',
+    description: 'Direct conversational interface with streaming AI responses.',
     phasePlanned: 'Phase 1',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'tasks',
@@ -100,9 +100,9 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     id: 'settings',
     label: 'Settings',
     iconName: 'Settings',
-    description: 'System configuration, provider credentials, and runtime parameters.',
+    description: 'AI model provider credentials, base URLs, and runtime parameters.',
     phasePlanned: 'Phase 1',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
 ];
 
@@ -206,8 +206,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-slate-300 font-mono">Single-user</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Foundation:</span>
-              <span className="text-emerald-400 font-medium">Phase 0 Active</span>
+              <span className="text-slate-500">Active Phase:</span>
+              <span className="text-indigo-400 font-medium">Phase 1 Active</span>
             </div>
           </div>
         </div>

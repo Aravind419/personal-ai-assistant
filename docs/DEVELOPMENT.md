@@ -56,32 +56,32 @@ docker compose down -v
 
 ### Step 3: Backend Setup (FastAPI)
 
-1. Navigate to `backend` and create a virtual environment:
+1. Navigate to `backend` and install dependencies:
    ```powershell
    cd backend
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
+   uv venv .venv
+   uv pip install -r requirements.txt
    ```
 
 2. Run database migrations (ensure Docker container is up):
    ```powershell
-   alembic upgrade head
+   .\.venv\Scripts\alembic upgrade head
    ```
 
 3. Run the automated test suite:
    ```powershell
-   pytest
+   .\.venv\Scripts\pytest
    ```
 
 4. Start the backend development server:
    ```powershell
-   uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+   .\.venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
    ```
 
 - Interactive OpenAPI Swagger Docs: [http://127.0.0.1:8000/api/v1/docs](http://127.0.0.1:8000/api/v1/docs)
-- Alternative Redoc: [http://127.0.0.1:8000/api/v1/redoc](http://127.0.0.1:8000/api/v1/redoc)
 - Health Check: [http://127.0.0.1:8000/api/v1/health](http://127.0.0.1:8000/api/v1/health)
+- AI Providers: [http://127.0.0.1:8000/api/v1/providers](http://127.0.0.1:8000/api/v1/providers)
+- Conversations: [http://127.0.0.1:8000/api/v1/conversations](http://127.0.0.1:8000/api/v1/conversations)
 
 ---
 
@@ -98,45 +98,42 @@ docker compose down -v
    npm run build
    ```
 
-3. Start the development server:
+3. Start the Vite development server:
    ```powershell
    npm run dev
    ```
 
-Open browser at [http://localhost:5173](http://localhost:5173).
+Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ---
 
-## 3. Development Workflow & Testing Commands
+## 3. Configuring OpenRouter API Key
 
-| Purpose | Directory | Command |
-|---|---|---|
-| **Backend Unit & Integration Tests** | `backend` | `pytest` |
-| **Backend Lint / Formatting Check** | `backend` | `ruff check .` (or `flake8`) |
-| **Run Migrations** | `backend` | `alembic upgrade head` |
-| **Generate Migration** | `backend` | `alembic revision --autogenerate -m "description"` |
-| **Frontend Production Build** | `frontend` | `npm run build` |
-| **Frontend Type Checking** | `frontend` | `npx tsc -b` |
-| **Frontend Development Server** | `frontend` | `npm run dev` |
+1. Open the web app at [http://localhost:5173](http://localhost:5173).
+2. Click **Settings** in the left sidebar menu.
+3. In the **OpenRouter** card, enter your OpenRouter API key (`sk-or-v1-...`).
+4. Select your preferred default model (e.g. `OpenAI: GPT-4o Mini` or `Anthropic: Claude 3.5 Haiku`).
+5. Click **Test Connection** to verify live credentials and measure network roundtrip latency.
+6. Click **Save Configuration**. Your key is securely encrypted at rest via Fernet symmetric encryption and will never be returned in plaintext to the frontend.
+7. Navigate to **Chat** to begin chatting with live streaming responses!
+
+Alternatively, you can provide `OPENROUTER_API_KEY=sk-or-v1-...` in `backend/.env` as a local environment fallback.
 
 ---
 
-## 4. Troubleshooting Guide
+## 4. Running Automated Tests
 
-### Issue 1: Database Connection Refused / Degraded Health
-- **Symptom**: `/api/v1/health` reports status `degraded` and database ping returns `connected: false`.
-- **Cause**: The PostgreSQL Docker container is not running or the port `5432` is occupied.
-- **Solution**:
-  1. Check Docker container: `docker compose ps`.
-  2. If exited or stopped, restart: `docker compose up -d postgres`.
-  3. Verify port mapping: ensure no local Postgres service is conflicting on port 5432.
+```powershell
+cd backend
+.\.venv\Scripts\pytest
+```
 
-### Issue 2: Alembic Migration Fails on Extension Vector
-- **Symptom**: `alembic upgrade head` fails with `permission denied to create extension "vector"` or `extension "vector" is not available`.
-- **Cause**: Standard PostgreSQL image used instead of `pgvector/pgvector:pg16`.
-- **Solution**: Ensure `docker-compose.yml` specifies `image: pgvector/pgvector:pg16`.
-
-### Issue 3: CORS Blocking Requests from Frontend
-- **Symptom**: Browser console logs `Cross-Origin Request Blocked`.
-- **Cause**: Frontend is running on a different port than `http://localhost:5173`.
-- **Solution**: Add the origin to `CORS_ORIGINS` in `backend/.env` (comma-separated).
+The test suite runs 22 comprehensive unit and integration tests across:
+- `tests/test_config.py`: Environment parsing and sanitization.
+- `tests/test_security.py`: Fernet encryption, decryption, and key masking.
+- `tests/test_providers.py`: Provider registry, OpenRouter credentials check, and error formatting.
+- `tests/test_conversations.py`: Thread creation, listing, retrieval, renaming, and deletion.
+- `tests/test_chat_stream.py`: SSE streaming token delivery and message persistence.
+- `tests/test_tools.py`: Tool registry and argument validation.
+- `tests/test_health.py`: Live database probe and system diagnostics.
+- `tests/test_exceptions.py`: Centralized error handlers.

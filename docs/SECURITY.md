@@ -14,10 +14,14 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
 2. **Client-Side Secret Isolation**:
    - The React frontend bundle runs in the user's browser. Never expose private API keys, backend secrets, or database URLs in frontend code.
    - Only non-sensitive variables prefixed with `VITE_` (such as `VITE_API_BASE_URL`) may be exposed to the frontend.
-3. **Automated Credential Redaction in Logging**:
+3. **Encryption at Rest for AI Provider Credentials**:
+   - Provider API keys stored in `provider_configurations.encrypted_api_key` are encrypted at rest using Fernet symmetric encryption (`backend/app/core/security.py`).
+   - The encryption key is derived using SHA-256 from the master `SECRET_KEY` held outside the database in environment variables.
+   - API endpoints (`GET /api/v1/providers`) **never** return plaintext keys. Only masked strings (e.g. `sk-or-••••••••abcd`) and a boolean `has_api_key` are provided to the UI.
+4. **Automated Credential Redaction in Logging**:
    - The backend includes a logging redactor (`RedactingFormatter` in `backend/app/core/logging.py`) and a database URL sanitizer (`sanitized_database_url` in `backend/app/core/config.py`).
    - All connection strings, passwords, and authorization tokens must be masked (`user:***@host`) before writing to stdout or disk.
-4. **Environment Isolation**:
+5. **Environment Isolation**:
    - Backend secrets are parsed and validated strictly via `pydantic-settings` (`backend/app/core/config.py`). Missing required secrets fail fast with explicit configuration errors.
 
 ---
@@ -32,17 +36,14 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
 
 ---
 
-## 4. Single-User Permission Boundaries & Approvals
+## 4. Controlled Tool Calling & Agent Boundaries
 
-In later phases (Phase 3+), the assistant will gain tool calling and automation capabilities:
-- **Read-Only Actions**: Harmless reads (e.g., retrieving system status, querying public documentation) may execute autonomously.
-- **Destructive / High-Impact Actions**:
-  - Writing or deleting local files.
-  - Executing system shell commands.
-  - Sending external communications (emails, messages).
-  - Modifying database schemas or external accounts.
-- **Mandatory Approval Engine**:
-  - High-impact actions **must** halt execution and present a structured approval request to the user via the Approvals module.
+- **Tool Sandboxing**:
+  - Agent tools execute strictly on the backend via `ToolRegistry` (`backend/app/tools/base.py`).
+  - Arguments are validated against JSON Schemas before execution.
+  - The model is **never** granted unrestricted computer control, arbitrary shell access, or arbitrary Python eval.
+- **Future Approval Engine (Phase 3+)**:
+  - Destructive or high-impact actions (writing files, external communications) must halt execution and present a structured approval request to the user via the Approvals module.
   - The agent must never bypass this gatekeeper.
 
 ---

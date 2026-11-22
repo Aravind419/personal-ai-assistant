@@ -84,3 +84,43 @@ This document records key technical and architectural decisions, the context in 
 - **Consequences**:
   - Prevents confusing fake interactions.
   - Maintains total engineering integrity across all phases.
+
+---
+
+## ADR-007: Provider-Independent Architecture & OpenRouter as Initial Adapter
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Directly coupling the assistant to a single LLM vendor makes provider migration, local inference (Ollama), and multi-provider failover difficult. OpenRouter provides a single unified interface to 100+ commercial and open models (OpenAI, Anthropic, Meta, Google, DeepSeek).
+- **Decision**:
+  Implement an abstract `BaseLLMProvider` interface and a `ProviderRegistry`. Completely implement OpenRouter as the first functional provider, while scaffolding adapter stubs for NVIDIA NIM and Ollama.
+- **Consequences**:
+  - The core chat engine communicates exclusively through normalized `ChatCompletionRequest` and `ChatStreamChunk` schemas.
+  - Adding future providers requires only authoring a single adapter subclass without altering chat or conversation code.
+
+---
+
+## ADR-008: Symmetric Encryption at Rest for API Credentials
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Storing user API keys in plaintext in PostgreSQL poses an unacceptable risk if database backups or dumps are accessed.
+- **Decision**:
+  Encrypt API keys before persisting to `provider_configurations` using Fernet symmetric encryption with a 256-bit key derived from the master `SECRET_KEY` held outside the database.
+- **Consequences**:
+  - API keys are never stored in plaintext in the database.
+  - Frontend responses only receive masked strings (e.g. `sk-or-••••••••abcd`) and a boolean flag `has_api_key`.
+
+---
+
+## ADR-009: Server-Sent Events (SSE) for Real-Time Chat Streaming
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Conversational AI demands low-latency, real-time token rendering. WebSockets require stateful connection negotiation and bi-directional framing overhead, whereas chat streaming is unidirectional from server to client.
+- **Decision**:
+  Use Server-Sent Events (`media_type="text/event-stream"`) with standard `ReadableStreamDefaultReader` on the React frontend and `StreamingResponse` in FastAPI.
+- **Consequences**:
+  - Works over standard HTTP/1.1 and HTTP/2 without custom proxy configurations.
+  - Allows clean cancellation via standard browser `AbortController` signals.
+  - Normalized event envelope (`token`, `error`, `done`) simplifies frontend consumption.

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AppShell } from './components/layout/AppShell';
 import { DashboardOverview } from './pages/DashboardOverview';
+import { ChatView } from './pages/ChatView';
+import { SettingsView } from './pages/SettingsView';
 import { PlaceholderView } from './components/common/PlaceholderView';
 import { NAVIGATION_ITEMS } from './components/layout/Sidebar';
 import type { NavTabId } from './types/navigation';
@@ -8,7 +10,7 @@ import type { HealthResponse, SystemInfoResponse } from './types/api';
 import { healthService } from './services/healthService';
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<NavTabId>('overview');
+  const [currentTab, setCurrentTab] = useState<NavTabId>('chat');
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfoResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -49,6 +51,27 @@ export function App() {
 
   const activeNavItem = NAVIGATION_ITEMS.find((item) => item.id === currentTab);
 
+  const renderActiveTab = () => {
+    switch (currentTab) {
+      case 'overview':
+        return (
+          <DashboardOverview
+            health={health}
+            systemInfo={systemInfo}
+            isLoading={isLoading}
+            error={error}
+            onRefresh={fetchDiagnostics}
+          />
+        );
+      case 'chat':
+        return <ChatView onNavigateToSettings={() => setCurrentTab('settings')} />;
+      case 'settings':
+        return <SettingsView />;
+      default:
+        return activeNavItem ? <PlaceholderView item={activeNavItem} /> : null;
+    }
+  };
+
   return (
     <AppShell
       currentTab={currentTab}
@@ -57,17 +80,7 @@ export function App() {
       isLoading={isLoading}
       onRefresh={fetchDiagnostics}
     >
-      {currentTab === 'overview' ? (
-        <DashboardOverview
-          health={health}
-          systemInfo={systemInfo}
-          isLoading={isLoading}
-          error={error}
-          onRefresh={fetchDiagnostics}
-        />
-      ) : activeNavItem ? (
-        <PlaceholderView item={activeNavItem} />
-      ) : null}
+      {renderActiveTab()}
     </AppShell>
   );
 }
