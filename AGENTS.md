@@ -35,10 +35,11 @@ Before making modifications, read the required core documentation located in [do
   - **Phase 0 (Engineering Foundation) — VERIFIED**
   - **Phase 1 (Basic AI Agent Implementation) — VERIFIED**
   - **Multi-Model Architecture & Cost Controls — VERIFIED**
-- **Next Phase**: **Phase 2 (Semantic Memory & Background Workers) — NOT_STARTED**
+  - **Phase 2 (Semantic Memory & Background Workers) — VERIFIED**
+- **Next Phase**: **Phase 3 (Tool Execution & Human-in-the-Loop Approvals) — NOT_STARTED**
 
 > [!IMPORTANT]
-> Phase 2 is NOT started. Do not jump ahead into implementing Phase 2 (pgvector semantic memory, Redis + Celery workers) or Phase 3 (Tool execution / approvals) without explicit user initiation and adhering to the planned task breakdown.
+> Phase 3 is NOT started. Do not jump ahead into implementing Phase 3 (Tool execution expansion, MCP bridge, human-in-the-loop approvals engine) or Phase 4 (Proactive background automations) without explicit user initiation and adhering to the planned task breakdown.
 
 ---
 

@@ -73,6 +73,52 @@ class Settings(BaseSettings):
         db = data.get("POSTGRES_DB", "personal_ai_db")
         return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
 
+    # Redis Configuration
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+    REDIS_DB: int = 0
+    REDIS_URL: str = ""
+
+    @field_validator("REDIS_URL", mode="before")
+    @classmethod
+    def assemble_redis_connection(cls, v: str | None, values) -> str:
+        if v and v.strip():
+            return v.strip()
+        data = values.data
+        host = data.get("REDIS_HOST", "localhost")
+        port = data.get("REDIS_PORT", 6379)
+        password = data.get("REDIS_PASSWORD")
+        db = data.get("REDIS_DB", 0)
+        auth = f":{password}@" if password else ""
+        return f"redis://{auth}{host}:{port}/{db}"
+
+    # Celery Configuration
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
+
+    @field_validator("CELERY_BROKER_URL", mode="before")
+    @classmethod
+    def assemble_celery_broker(cls, v: str | None, values) -> str:
+        if v and v.strip():
+            return v.strip()
+        return values.data.get("REDIS_URL", "redis://localhost:6379/0")
+
+    @field_validator("CELERY_RESULT_BACKEND", mode="before")
+    @classmethod
+    def assemble_celery_backend(cls, v: str | None, values) -> str:
+        if v and v.strip():
+            return v.strip()
+        return values.data.get("REDIS_URL", "redis://localhost:6379/0")
+
+    # Semantic Memory & Embedding Configuration
+    DEFAULT_EMBEDDING_PROVIDER: str = "local"  # "local" or "openrouter"
+    DEFAULT_EMBEDDING_MODEL: str = "semantic-hash-384"
+    EMBEDDING_DIMENSION: int = 384
+    MEMORY_RETRIEVAL_LIMIT: int = 5
+    MEMORY_SIMILARITY_THRESHOLD: float = 0.4
+    MEMORY_EXTRACTION_ENABLED: bool = True
+
     # Sanitized representation for logging
     @property
     def sanitized_database_url(self) -> str:

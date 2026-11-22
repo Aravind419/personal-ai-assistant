@@ -44,7 +44,10 @@ The Personal AI Agent is a long-term engineering initiative designed to build a 
 | **Styling** | Tailwind CSS v4 | Utility-first, predictable styling with standardized design tokens and zero runtime overhead. |
 | **Backend** | Python 3.13 + FastAPI | High-throughput asynchronous REST API with automatic OpenAPI documentation and Pydantic validation. |
 | **Database** | PostgreSQL 16 | Relational backbone with ACID transactions, JSONB extensibility, and native vector search capabilities. |
-| **Vector Engine** | pgvector (Prepared) | Single-database storage eliminating dual-database synchronization issues between vectors and relational records. |
+| **Vector Engine** | pgvector (Active) | Single-database storage eliminating dual-database synchronization issues between vectors and relational records. |
+| **Embedding Provider** | Provider-Independent Interface | Pluggable embedding providers (`BaseEmbeddingProvider`) with deterministic `LocalSemanticEmbeddingProvider` (zero downloads) and OpenRouter adapter. |
+| **Semantic Memory** | Extraction & Retrieval Pipeline | Asynchronous extraction, secret sanitization, deduplication (>= 0.85), superseding conflict handling, and `<retrieved_context>` prompt injection. |
+| **Background Tasks** | Redis + Celery + Async Fallback | Reliable task queue running in Docker container with local asynchronous fallback, retries, and sanitized error persistence. |
 | **AI Provider** | Provider-Independent Adapter Architecture | Isolates core agent from model vendors. OpenRouter implemented as initial gateway; NVIDIA & Ollama prepared. |
 | **Model Registry** | Central Model Registry & Policy Engine | Central catalog managing pricing categories (`free`/`paid`), capabilities, context limits, and token cost calculation. |
 | **Operational Modes** | Free-Only, Paid-Enabled, Manual | Strict guardrails: Free-Only mode strictly prevents executing or falling back to paid models. |
@@ -124,6 +127,23 @@ personal-ai-assistent/
 │   │   │   ├── schemas.py       # Conversation & message schemas
 │   │   │   ├── service.py       # Thread management & SSE chat streaming service
 │   │   │   └── routes.py        # /api/v1/conversations REST & SSE endpoints
+│   │   ├── memory/
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py        # Re-export of Memory model
+│   │   │   ├── schemas.py       # Pydantic schemas for CRUD and search
+│   │   │   ├── embeddings.py    # BaseEmbeddingProvider and LocalSemanticEmbeddingProvider
+│   │   │   ├── repository.py    # Data access layer and pgvector HNSW cosine search
+│   │   │   ├── service.py       # Memory business service and multi-factor ranking
+│   │   │   ├── extraction.py    # Conversation extraction and conflict superseding
+│   │   │   ├── retrieval.py     # Prompt context builder and injection isolation
+│   │   │   └── routes.py        # /api/v1/memories REST endpoints
+│   │   ├── tasks/
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py        # Re-export of BackgroundTask model
+│   │   │   ├── schemas.py       # Task schemas and status enums
+│   │   │   ├── celery_app.py    # Celery application and task definitions
+│   │   │   ├── service.py       # Task dispatch, cancellation, retry, and async fallback
+│   │   │   └── routes.py        # /api/v1/tasks REST endpoints
 │   │   ├── tools/
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py          # BaseTool and ToolRegistry
@@ -170,6 +190,8 @@ personal-ai-assistent/
         └── pages/
             ├── DashboardOverview.tsx # Foundation diagnostic dashboard
             ├── ChatView.tsx          # Real-time streaming chat page
+            ├── MemoryView.tsx        # Semantic long-term memory explorer
+            ├── TasksView.tsx         # Background task worker dashboard
             └── SettingsView.tsx      # AI Provider configuration page
 ```
 
@@ -188,3 +210,8 @@ personal-ai-assistent/
    - Cross-Origin Resource Sharing is restricted explicitly to configured development and production hosts (`CORS_ORIGINS`).
 5. **Sandboxed Tool Calling**:
    - Agent tool execution is strictly validated via JSON Schema on the backend. No arbitrary shell execution or unrestricted filesystem access is allowed.
+6. **Memory Context Isolation & Prompt Defense**:
+   - Retrieved memories are wrapped strictly inside `<retrieved_context>` tags and labeled explicitly as unverified contextual background rather than system instructions.
+   - The memory extraction pipeline actively detects and discards passwords, API keys, Bearer tokens, and financial identifiers.
+7. **Task Error Sanitization**:
+   - Background task failure traces are sanitized before persistence and API serialization, preventing leakage of internal execution environments or credentials.

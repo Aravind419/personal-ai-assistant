@@ -30,16 +30,22 @@ Copy-Item frontend\.env.example frontend\.env
 
 ---
 
-### Step 2: Database Initialization (Docker)
+### Step 2: Database & Worker Infrastructure (Docker)
 
-Start the PostgreSQL 16 container with `pgvector`:
+Start the PostgreSQL 16 container with `pgvector` and the Redis 7 container:
 
 ```powershell
-# Start container in detached mode
-docker compose up -d postgres
+# Start postgres and redis in detached mode
+docker compose up -d postgres redis
 
 # Check status
 docker compose ps
+```
+
+To run a Celery worker locally (optional during development as backend includes automatic async fallback):
+```powershell
+cd backend
+.\.venv\Scripts\celery -A app.tasks.celery_app.celery_app worker --loglevel=info -P solo
 ```
 
 To stop the container:
@@ -128,7 +134,7 @@ cd backend
 .\.venv\Scripts\pytest
 ```
 
-The test suite runs 22 comprehensive unit and integration tests across:
+The test suite runs 39 comprehensive unit and integration tests across:
 - `tests/test_config.py`: Environment parsing and sanitization.
 - `tests/test_security.py`: Fernet encryption, decryption, and key masking.
 - `tests/test_providers.py`: Provider registry, OpenRouter credentials check, and error formatting.
@@ -137,3 +143,7 @@ The test suite runs 22 comprehensive unit and integration tests across:
 - `tests/test_tools.py`: Tool registry and argument validation.
 - `tests/test_health.py`: Live database probe and system diagnostics.
 - `tests/test_exceptions.py`: Centralized error handlers.
+- `tests/test_model_registry.py`: Central model catalog, free-only mode, and fallback chain filtering.
+- `tests/test_memory.py`: Semantic memory CRUD, pgvector HNSW search, and statistics.
+- `tests/test_memory_intelligence.py`: Secret filtering, memory extraction, conflict resolution, and context injection.
+- `tests/test_tasks.py`: Background task lifecycle, status transitions, retries, and error sanitization.

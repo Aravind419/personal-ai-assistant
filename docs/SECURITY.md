@@ -76,3 +76,19 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
   1. Immediately revoke and regenerate the compromised credential.
   2. Document the remediation in `docs/SECURITY.md` and `docs/CHANGELOG.md`.
   3. Never record the actual compromised value in documentation.
+
+---
+
+## 7. Semantic Memory & Background Worker Security (Phase 2)
+
+1. **Automatic Credential & Secret Scrubbing in Memory Pipeline**:
+   - The extraction engine (`backend/app/memory/extraction.py`) applies regex pattern guards before storing any candidate fact into pgvector.
+   - Any text containing API keys (`sk-...`, `ghp_...`), passwords (`password: ...`), authorization bearer tokens (`Bearer ...`), credit card numbers, or SSNs is automatically dropped.
+2. **Context Isolation & Injection Defense**:
+   - Stored memory content is treated strictly as untrusted user data.
+   - When injected into conversational context, retrieved memories are isolated inside `<retrieved_context>` XML wrappers and explicitly labeled as background facts rather than executable instructions.
+   - Retrieved memories can never override core system prompts or agent guardrails.
+3. **Background Worker Error Sanitization**:
+   - Background tasks stored in `background_tasks.error_message` are sanitized to strip multiline internal stack traces or environment variables before being returned to API clients.
+4. **Deleted Memory Vector Invalidation**:
+   - Deleting a memory permanently removes both the tabular record and its vector embedding from PostgreSQL, guaranteeing that deleted facts can never resurface in future vector searches.

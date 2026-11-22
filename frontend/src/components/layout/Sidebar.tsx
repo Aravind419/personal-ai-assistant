@@ -38,7 +38,7 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     iconName: 'CheckSquare',
     description: 'Task lifecycle management, backlog, and multi-step plans.',
     phasePlanned: 'Phase 2',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'memory',
@@ -46,7 +46,7 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     iconName: 'Brain',
     description: 'Controlled persistent memory, user preferences, and pgvector knowledge store.',
     phasePlanned: 'Phase 2',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'skills',

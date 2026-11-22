@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.0] - 2026-11-22 - Phase 2 Semantic Memory & Background Workers Complete
+
+### Added
+- **pgvector Semantic Memory Store**:
+  - `Memory` model (`backend/app/models/memory.py` / `app/memory/models.py`) with 384-dimensional pgvector `Vector` column, importance, confidence, category, timestamps, and JSON metadata.
+  - Alembic migration `004_semantic_memory_and_tasks.py` adding `memories` table, HNSW cosine vector index (`vector_cosine_ops`), and `background_tasks` table.
+  - CRUD operations and statistics endpoints under `/api/v1/memories`: create, list, retrieve, update, delete, archive/unarchive, stats, and semantic vector search.
+- **Provider-Independent Embedding Architecture**:
+  - Pluggable `BaseEmbeddingProvider` interface and `EmbeddingRegistry` (`backend/app/memory/embeddings.py`).
+  - Default `LocalSemanticEmbeddingProvider` generating 384-dimensional dense vectors using subword and character n-gram projections with L2 unit normalization (zero network downloads, sub-millisecond execution).
+  - Pluggable `OpenRouterEmbeddingProvider` for cloud embedding endpoints.
+- **Automatic Memory Extraction & Deduplication**:
+  - `extract_and_reconcile_memories` pipeline (`backend/app/memory/extraction.py`) extracting durable profile facts, user preferences, goals, and active projects.
+  - Strict security regex filter discarding passwords, API keys, Bearer tokens, financial numbers, and trivial chatter.
+  - Semantic deduplication (>= 0.85 similarity): updates existing memory, bumps confidence, and preserves historical versions in `metadata_json.history`.
+- **Isolated Semantic Retrieval**:
+  - `retrieve_relevant_memory_context` (`backend/app/memory/retrieval.py`) querying vector store and ranking matches via multi-factor scoring (`0.6*similarity + 0.25*importance + 0.15*confidence`).
+  - Safe `<retrieved_context>` prompt injection separating personal background facts from system instructions.
+- **Redis & Celery Background Workers**:
+  - Redis container (`redis:7-alpine`) service added to `docker-compose.yml`.
+  - Celery application instance (`backend/app/tasks/celery_app.py`) with soft/hard timeouts, retries, and task handlers (`extract_memory_celery_task`, `reindex_embeddings_celery_task`).
+  - Resilient local asynchronous fallback in `TaskService` guaranteeing task execution even if Celery/Redis is temporarily offline.
+  - Task management endpoints under `/api/v1/tasks`: listing, details, stats, cancellation, and retrying.
+- **Frontend Dashboards**:
+  - **Memory Explorer** (`frontend/src/pages/MemoryView.tsx`): Overview statistics, category distribution badges, full-text & semantic search, category filter, active vs archived view, Add/Edit Memory modal, and deletion controls.
+  - **Tasks Dashboard** (`frontend/src/pages/TasksView.tsx`): Status metrics, live 4s auto-refresh polling, task duration indicators, retry and cancel actions.
+  - Activated `Memory` and `Tasks` in navigation sidebar and `App.tsx` router.
+- **Automated Tests**:
+  - Added 9 new automated tests across `test_memory.py`, `test_memory_intelligence.py`, and `test_tasks.py` (39 total tests passing, 100% pass rate).
+  - Verified browser workflows using Playwright MCP for both Memory and Tasks views.
+
+---
+
 ## [0.3.0] - 2026-11-22 - Provider-Independent Multi-Model Architecture & Cost Controls
 
 ### Added

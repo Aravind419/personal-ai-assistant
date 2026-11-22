@@ -149,3 +149,45 @@ This document records key technical and architectural decisions, the context in 
 - **Consequences**:
   - Transparent audit trail of token consumption and estimated spending.
   - Instant visibility into model response latency and error rates across providers.
+
+---
+
+## ADR-013: Deterministic & Provider-Independent Embedding Architecture
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Requiring a commercial paid embedding API (e.g. OpenAI `text-embedding-3-small`) violates the project's zero-cost development principle. Conversely, automatically downloading massive multi-gigabyte HuggingFace models causes unexpected network delays, storage bloating, and potential failure in offline development environments.
+- **Decision**:
+  Implement a provider-independent `BaseEmbeddingProvider` interface with an `EmbeddingRegistry`. By default, use `LocalSemanticEmbeddingProvider`, which computes normalized 384-dimensional dense vectors using subword and character n-gram hashing and term weighting. Support `OpenRouterEmbeddingProvider` as a pluggable cloud alternative.
+- **Consequences**:
+  - Zero required API keys, zero network downloads, and sub-millisecond execution.
+  - Semantic vector similarity is fully supported in PostgreSQL pgvector via HNSW index.
+  - Future embedding models can be added cleanly via the provider registry.
+
+---
+
+## ADR-014: Asynchronous Memory Extraction with Deduplication & Historical Superseding
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Chat responses must never be delayed by memory extraction or vector generation. Furthermore, conversation facts evolve over time (e.g., "User is learning React" followed later by "User finished React and is learning Flutter"). Blindly appending duplicate or conflicting memories pollutes vector search and degrades prompt quality.
+- **Decision**:
+  Schedule memory extraction as an asynchronous background task immediately after assistant message persistence. The extraction pipeline evaluates semantic similarity (>= 0.85); when superseding facts are detected, the existing memory is updated and previous versions are preserved in `metadata_json.history`.
+- **Consequences**:
+  - Chat streaming remains instant and unblocked.
+  - Memory store remains concise, accurate, and free of stale contradictions.
+  - Transparent audit trail of memory updates.
+
+---
+
+## ADR-015: Redis & Celery Background Workers with Resilient Asynchronous Fallback
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Background task execution requires durable scheduling, execution timeouts, retries, and failure visibility. However, during local development or startup, Redis or Celery worker processes may not always be booted. Crashing or dropping tasks when Celery is offline impairs developer ergonomics.
+- **Decision**:
+  Containerize Redis (`redis:7-alpine`) in `docker-compose.yml` and configure Celery workers with 60s soft / 120s hard timeouts and exponential backoff retries. Implement a resilient fallback in `TaskService` that executes tasks directly in the local asynchronous event loop if Celery broker dispatch is unavailable.
+- **Consequences**:
+  - Production-ready background queue architecture.
+  - Total resilience: background tasks always execute and persist state in `background_tasks`.
+  - Zero crashes or lost tasks when Redis is temporarily offline.

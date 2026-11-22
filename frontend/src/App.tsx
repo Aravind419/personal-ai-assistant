@@ -3,6 +3,8 @@ import { AppShell } from './components/layout/AppShell';
 import { DashboardOverview } from './pages/DashboardOverview';
 import { ChatView } from './pages/ChatView';
 import { SettingsView } from './pages/SettingsView';
+import { MemoryView } from './pages/MemoryView';
+import { TasksView } from './pages/TasksView';
 import { PlaceholderView } from './components/common/PlaceholderView';
 import { NAVIGATION_ITEMS } from './components/layout/Sidebar';
 import type { NavTabId } from './types/navigation';
@@ -65,6 +67,10 @@ export function App() {
         );
       case 'chat':
         return <ChatView onNavigateToSettings={() => setCurrentTab('settings')} />;
+      case 'memory':
+        return <MemoryView />;
+      case 'tasks':
+        return <TasksView />;
       case 'settings':
         return <SettingsView />;
       default:

@@ -85,14 +85,28 @@ The project follows a rigorous phased engineering methodology. Each phase contai
 ---
 
 ### Phase 2: Semantic Memory & Background Workers
-- **Status**: `NOT_STARTED`
+- **Status**: `VERIFIED`
 - **Dependencies**: Phase 1 (VERIFIED)
 - **Key Deliverables**:
-  - **Semantic Vector Store**: Database tables for storing vector embeddings using PostgreSQL `pgvector`.
-  - **Memory Extraction Pipeline**: Automatic extraction of user facts, preferences, and entities from conversations.
-  - **Redis & Celery Worker**: Asynchronous task queue running in a dedicated Docker service.
-  - **Tasks View**: Interactive task dashboard displaying background task states, schedules, and historical outputs.
-  - **Memory Exploration View**: Searchable UI for inspecting and managing stored personal facts and embeddings.
+  - **Semantic Vector Store**: `memories` table with 384-dimensional pgvector `Vector` column, HNSW cosine distance index, and Alembic migration `004_semantic_memory_and_tasks.py`.
+  - **Provider-Independent Embedding Layer**: `BaseEmbeddingProvider` abstraction with deterministic `LocalSemanticEmbeddingProvider` (zero downloads, fast CPU inference) and OpenRouter cloud adapter.
+  - **Memory Extraction & Conflict Engine**: Automatic extraction of durable facts from user/assistant messages with regex secret filtering, deduplication (similarity >= 0.85), and historical superseding.
+  - **Isolated Semantic Context Retrieval**: Top-k vector retrieval with multi-factor scoring (`0.6*similarity + 0.25*importance + 0.15*confidence`) injected into system prompts as `<retrieved_context>`.
+  - **Redis & Celery Worker Infrastructure**: Dockerized Redis container (`redis:7-alpine`), Celery application with execution timeouts, retries, and local async fallback.
+  - **Persistent Task Management API**: `background_tasks` table and REST endpoints under `/api/v1/tasks` for listing, filtering, cancellation, and retrying.
+  - **Interactive Frontend Dashboards**: `MemoryView.tsx` with search, category filtering, stats, Add/Edit modal, and `TasksView.tsx` with live 4s auto-refresh polling and action controls.
+- **Acceptance Criteria**:
+  - [x] pgvector memory storage verified with native HNSW cosine distance queries.
+  - [x] Embedding generation works offline through provider abstraction without requiring paid keys.
+  - [x] Automatic memory extraction runs asynchronously after chat responses without delaying token streaming.
+  - [x] Duplicate detection, conflict resolution, and fact superseding verified.
+  - [x] Semantic retrieval successfully injects relevant memories into future conversation prompts.
+  - [x] Memory CRUD operates through real backend REST endpoints.
+  - [x] Redis and Celery worker infrastructure operational with graceful offline fallback.
+  - [x] Background task lifecycle, retries, and cancellation fully functional.
+  - [x] Memory Explorer and Tasks Dashboard display real PostgreSQL data.
+  - [x] All 39 backend tests pass; clean frontend production build with 0 errors.
+  - [x] End-to-end browser workflows verified via Playwright MCP.
 
 ---
 

@@ -27,6 +27,7 @@ from app.providers.model_registry import CentralModelRegistry
 from app.providers.model_service import ModelService
 from app.core.exceptions import ResourceNotFoundException
 from app.core.logging import logger
+from app.core.config import settings
 
 
 class ConversationService:
@@ -298,6 +299,15 @@ class ConversationService:
         provider_adapter = await ProviderRegistry.get_adapter_instance(p_type, db=db)
         sys_prompt = override_system_prompt or conv.system_prompt
 
+        # 4.5 Retrieve semantic memory context (Phase 2)
+        try:
+            from app.memory.retrieval import retrieve_relevant_memory_context
+            mem_ctx = await retrieve_relevant_memory_context(user_content, session=db)
+            if mem_ctx:
+                sys_prompt = f"{sys_prompt}\n\n{mem_ctx}" if sys_prompt else mem_ctx
+        except Exception as e:
+            logger.warning(f"Memory context retrieval failed non-fatally: {e}")
+
         # Approximate prompt tokens (1 token ~ 4 chars)
         prompt_chars = sum(len(m.content) for m in chat_messages)
         approx_prompt_tokens = max(1, prompt_chars // 4)
@@ -423,6 +433,19 @@ class ConversationService:
                     "fallback_used": is_fallback_attempt,
                 })
                 yield f"data: {done_payload}\n\n"
+
+                # 7. Asynchronously schedule background memory extraction (Phase 2)
+                if settings.MEMORY_EXTRACTION_ENABLED:
+                    try:
+                        _schedule_background_memory_extraction(
+                            user_content=user_content,
+                            assistant_content=assembled_content,
+                            conversation_id=conversation_id,
+                            message_id=assistant_msg.id,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to schedule memory extraction: {e}")
+
                 break
 
             except Exception as exc:
@@ -450,3 +473,47 @@ class ConversationService:
         if not streaming_succeeded:
             err_payload = json.dumps({"type": "error", "error": last_error})
             yield f"data: {err_payload}\n\n"
+
+
+async def _execute_async_memory_extraction(
+    user_content: str,
+    assistant_content: str,
+    conversation_id: str,
+    message_id: str,
+) -> None:
+    """Asynchronously creates a persistent background task record and executes extraction."""
+    try:
+        from app.database.session import async_session_factory
+        from app.tasks.service import TaskService
+        async with async_session_factory() as session:
+            await TaskService.create_and_dispatch_task(
+                session=session,
+                task_name="Extract Conversation Memories",
+                task_type="memory_extraction",
+                input_params={
+                    "user_content": user_content,
+                    "assistant_content": assistant_content,
+                    "conversation_id": conversation_id,
+                    "message_id": message_id,
+                },
+            )
+    except Exception as exc:
+        logger.warning(f"Background memory extraction encountered non-fatal error: {exc}")
+
+
+def _schedule_background_memory_extraction(
+    user_content: str,
+    assistant_content: str,
+    conversation_id: str,
+    message_id: str,
+) -> None:
+    """Dispatches asynchronous memory extraction without blocking SSE streaming."""
+    import asyncio
+    asyncio.create_task(
+        _execute_async_memory_extraction(
+            user_content=user_content,
+            assistant_content=assistant_content,
+            conversation_id=conversation_id,
+            message_id=message_id,
+        )
+    )
