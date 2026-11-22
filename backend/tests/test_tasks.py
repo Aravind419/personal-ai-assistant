@@ -96,3 +96,42 @@ async def test_task_error_sanitization(async_client: AsyncClient):
     # Sanitized error should only include the clean summary line, not the multiline traceback header
     assert "Traceback" not in data["error_message"]
     assert "Critical parsing error" in data["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_worker_health_and_queue_metrics(async_client: AsyncClient):
+    # Test GET /api/v1/tasks/health
+    res = await async_client.get("/api/v1/tasks/health")
+    assert res.status_code == 200
+    health = res.json()
+    assert "redis_connected" in health
+    assert "celery_online" in health
+    assert "worker_count" in health
+    assert isinstance(health["registered_task_types"], list)
+    assert isinstance(health["active_workers"], list)
+
+    # Test GET /api/v1/tasks/stats
+    stats_res = await async_client.get("/api/v1/tasks/stats")
+    assert stats_res.status_code == 200
+    stats = stats_res.json()
+    assert "oldest_queued_wait_seconds" in stats
+    assert "average_wait_seconds" in stats
+    assert "stale_queued_count" in stats
+
+
+@pytest.mark.asyncio
+async def test_task_search_and_sort(async_client: AsyncClient):
+    # Test task listing with search and sort
+    search_res = await async_client.get("/api/v1/tasks?search=Memory&sort_by=created_desc")
+    assert search_res.status_code == 200
+    data = search_res.json()
+    assert "items" in data
+    assert "total" in data
+
+    # Test stale task sweep endpoint
+    sweep_res = await async_client.post("/api/v1/tasks/sweep-stale?max_stale_seconds=300")
+    assert sweep_res.status_code == 200
+    sweep_data = sweep_res.json()
+    assert "swept_count" in sweep_data
+    assert "message" in sweep_data
+

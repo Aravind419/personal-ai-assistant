@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     DEFAULT_EMBEDDING_MODEL: str = "semantic-hash-384"
     EMBEDDING_DIMENSION: int = 384
     MEMORY_RETRIEVAL_LIMIT: int = 5
-    MEMORY_SIMILARITY_THRESHOLD: float = 0.4
+    MEMORY_SIMILARITY_THRESHOLD: float = 0.20
     MEMORY_EXTRACTION_ENABLED: bool = True
 
     # Sanitized representation for logging

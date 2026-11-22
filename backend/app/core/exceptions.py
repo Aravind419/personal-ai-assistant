@@ -27,6 +27,12 @@ class BadRequestException(AppException):
         super().__init__(message, status_code=status.HTTP_400_BAD_REQUEST, details=details)
 
 
+class ValidationException(AppException):
+    def __init__(self, message: str = "Validation failed", details: dict | None = None):
+        super().__init__(message, status_code=status.HTTP_400_BAD_REQUEST, details=details)
+
+
+
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
     logger.error(f"Application error on {request.method} {request.url.path}: {exc.message} (status: {exc.status_code})")
     return JSONResponse(

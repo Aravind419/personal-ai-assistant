@@ -43,9 +43,10 @@ def extract_memory_celery_task(
     start_time = time.perf_counter()
 
     async def _run():
+        import socket
         from app.database.session import async_session_factory
         from app.tasks.models import BackgroundTask
-        from app.memory.extraction import extract_and_reconcile_memories
+        from app.memory.extraction import extract_and_reconcile_memories_with_trace
         from sqlalchemy import select
 
         async with async_session_factory() as session:
@@ -59,7 +60,7 @@ def extract_memory_celery_task(
                 await session.commit()
 
             try:
-                memories = await extract_and_reconcile_memories(
+                memories, trace = await extract_and_reconcile_memories_with_trace(
                     user_message=user_content,
                     assistant_response=assistant_content,
                     conversation_id=conversation_id,
@@ -73,12 +74,15 @@ def extract_memory_celery_task(
                     task_rec.completed_at = datetime.now(timezone.utc)
                     task_rec.duration_ms = duration_ms
                     task_rec.result_metadata_json = json.dumps({
+                        "execution_mode": "celery_worker",
+                        "worker_id": socket.gethostname(),
                         "memories_extracted": len(memories),
                         "memory_ids": [m.id for m in memories],
+                        "extraction_trace": trace,
                     })
                     await session.commit()
 
-                return {"status": "succeeded", "memories_count": len(memories)}
+                return {"status": "succeeded", "memories_count": len(memories), "trace": trace}
 
             except Exception as exc:
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 2)

@@ -39,6 +39,14 @@ class BackgroundTaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Extended telemetry & source inspectability
+    source_conversation_id: Optional[str] = None
+    source_conversation_title: Optional[str] = None
+    source_message_id: Optional[str] = None
+    execution_mode: Optional[str] = None
+    worker_id: Optional[str] = None
+    queue_wait_ms: Optional[float] = None
+
 
 class TaskListResponse(BaseModel):
     items: List[BackgroundTaskResponse]
@@ -54,3 +62,25 @@ class TaskStatsResponse(BaseModel):
     succeeded: int
     failed: int
     cancelled: int
+    oldest_queued_wait_seconds: Optional[float] = None
+    average_wait_seconds: Optional[float] = None
+    stale_queued_count: int = 0
+
+
+class WorkerHealthResponse(BaseModel):
+    redis_connected: bool
+    redis_latency_ms: Optional[float] = None
+    celery_online: bool
+    worker_count: int = 0
+    active_workers: List[str] = []
+    registered_task_types: List[str] = []
+    active_tasks_count: int = 0
+    reserved_tasks_count: int = 0
+    last_heartbeat: Optional[datetime] = None
+    last_successful_task: Optional[Dict[str, Any]] = None
+
+
+class SweepStaleTasksResponse(BaseModel):
+    swept_count: int
+    task_ids: List[str]
+    message: str

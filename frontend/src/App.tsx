@@ -5,6 +5,9 @@ import { ChatView } from './pages/ChatView';
 import { SettingsView } from './pages/SettingsView';
 import { MemoryView } from './pages/MemoryView';
 import { TasksView } from './pages/TasksView';
+import { ApprovalsView } from './pages/ApprovalsView';
+import { ToolsView } from './pages/ToolsView';
+import { ActivityLogsView } from './pages/ActivityLogsView';
 import { PlaceholderView } from './components/common/PlaceholderView';
 import { NAVIGATION_ITEMS } from './components/layout/Sidebar';
 import type { NavTabId } from './types/navigation';
@@ -71,6 +74,12 @@ export function App() {
         return <MemoryView />;
       case 'tasks':
         return <TasksView />;
+      case 'tools':
+        return <ToolsView />;
+      case 'approvals':
+        return <ApprovalsView />;
+      case 'activity_logs':
+        return <ActivityLogsView />;
       case 'settings':
         return <SettingsView />;
       default:

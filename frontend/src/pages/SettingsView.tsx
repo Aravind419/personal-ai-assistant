@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { providerService } from '../services/providerService';
 import { modelService } from '../services/modelService';
+import { personalityService } from '../services/personalityService';
 import type {
   ProviderConfigResponse,
   ProviderTestResult,
@@ -9,6 +10,7 @@ import type {
   ModelUsageSummary,
   ModelMode,
 } from '../types/provider';
+import type { AssistantPersonalityConfig } from '../types/personality';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import {
@@ -27,6 +29,7 @@ import {
   Cpu,
   Sliders,
   DollarSign,
+  Bot,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -54,14 +57,28 @@ export const SettingsView: React.FC = () => {
   const [catalogFilter, setCatalogFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [metrics, setMetrics] = useState<ModelUsageSummary | null>(null);
 
+  // Personality State
+  const [personality, setPersonality] = useState<AssistantPersonalityConfig>({
+    name: 'Personal AI Assistant',
+    communication_style: 'natural',
+    formality: 'balanced',
+    detail_level: 'balanced',
+    memory_usage: 'natural_weave',
+    emoji_usage: 'minimal',
+    custom_instructions: '',
+  });
+  const [isSavingPersonality, setIsSavingPersonality] = useState(false);
+  const [personalitySaveSuccess, setPersonalitySaveSuccess] = useState(false);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pList, policy, catalog, usage] = await Promise.all([
+      const [pList, policy, catalog, usage, personCfg] = await Promise.all([
         providerService.listProviders(),
         modelService.getModelPolicy(),
         modelService.listModels(),
         modelService.getModelMetrics().catch(() => null),
+        personalityService.getPersonality().catch(() => null),
       ]);
 
       setProviders(pList);
@@ -72,10 +89,29 @@ export const SettingsView: React.FC = () => {
       setMaxCostPerRequest(policy.max_cost_per_request);
       setCatalogModels(catalog);
       setMetrics(usage);
+      if (personCfg) {
+        setPersonality(personCfg);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to load system settings.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePersonality = async () => {
+    setIsSavingPersonality(true);
+    setPersonalitySaveSuccess(false);
+    setError(null);
+    try {
+      const updated = await personalityService.updatePersonality(personality);
+      setPersonality(updated);
+      setPersonalitySaveSuccess(true);
+      setTimeout(() => setPersonalitySaveSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update assistant personality.');
+    } finally {
+      setIsSavingPersonality(false);
     }
   };
 
@@ -408,7 +444,145 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Primary Implemented Gateway: OpenRouter */}
+      {/* 2. Assistant Identity & Personality Controls */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-sm">
+        <div className="p-5 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>Assistant Identity & Conversational Personality</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  Anti-Robotic Harness Active
+                </span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Controls communication style, formality, memory integration, and tone without robotic meta-announcements.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {/* Assistant Name */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Assistant Name</label>
+              <input
+                type="text"
+                value={personality.name}
+                onChange={(e) => setPersonality({ ...personality, name: e.target.value })}
+                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+                placeholder="Personal AI Assistant"
+              />
+            </div>
+
+            {/* Communication Style */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Communication Style</label>
+              <select
+                value={personality.communication_style}
+                onChange={(e) => setPersonality({ ...personality, communication_style: e.target.value as any })}
+                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="natural">Natural & Conversational (Default)</option>
+                <option value="concise">Concise & Direct</option>
+                <option value="technical">Technical & Architectural</option>
+                <option value="detailed">Detailed & Comprehensive</option>
+              </select>
+            </div>
+
+            {/* Formality Level */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Formality Level</label>
+              <select
+                value={personality.formality}
+                onChange={(e) => setPersonality({ ...personality, formality: e.target.value as any })}
+                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="balanced">Balanced (Default)</option>
+                <option value="casual">Casual & Relaxed</option>
+                <option value="formal">Formal & Structured</option>
+              </select>
+            </div>
+
+            {/* Detail Level */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Detail Level</label>
+              <select
+                value={personality.detail_level}
+                onChange={(e) => setPersonality({ ...personality, detail_level: e.target.value as any })}
+                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="balanced">Balanced (Default)</option>
+                <option value="concise">Concise</option>
+                <option value="in_depth">In-Depth Explanations</option>
+              </select>
+            </div>
+
+            {/* Memory Usage Mode */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Memory Integration</label>
+              <select
+                value={personality.memory_usage}
+                onChange={(e) => setPersonality({ ...personality, memory_usage: e.target.value as any })}
+                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="natural_weave">Natural Weave (Zero Announcements)</option>
+                <option value="minimal">Minimal (Only When Essential)</option>
+                <option value="explicit">Explicit Acknowledgment</option>
+              </select>
+            </div>
+
+            {/* Emoji Usage */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300">Emoji Usage</label>
+              <select
+                value={personality.emoji_usage}
+                onChange={(e) => setPersonality({ ...personality, emoji_usage: e.target.value as any })}
+                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="minimal">Minimal (Context-Appropriate)</option>
+                <option value="none">Strictly None</option>
+                <option value="expressive">Expressive</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Custom Persona Instructions */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-300">Custom Behavioral Guidelines</label>
+            <textarea
+              value={personality.custom_instructions || ''}
+              onChange={(e) => setPersonality({ ...personality, custom_instructions: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+              placeholder="e.g. Prefer TypeScript examples, emphasize modular design, keep explanations focused on production standards."
+            />
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={handleSavePersonality}
+              disabled={isSavingPersonality}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>{isSavingPersonality ? 'Saving Personality...' : 'Save Personality Settings'}</span>
+            </button>
+            {personalitySaveSuccess && (
+              <span className="text-xs text-cyan-400 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Personality settings updated!</span>
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Primary Implemented Gateway: OpenRouter */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden shadow-sm">
         <div className="p-5 border-b border-slate-800 bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">

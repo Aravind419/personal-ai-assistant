@@ -1,345 +1,578 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-  CheckSquare,
-  RefreshCw,
-  Clock,
   CheckCircle2,
+  Clock,
   XCircle,
-  RotateCcw,
-  Ban,
-  Activity,
+  AlertTriangle,
+  RotateCw,
+  Search,
   Server,
+  Zap,
+  RefreshCw,
+  Info,
+  ChevronRight,
+  Database,
+  Layers,
+  Cpu,
 } from 'lucide-react';
 import { taskService } from '../services/taskService';
-import type { TaskItem, TaskStats, TaskStatus } from '../types/task';
-import { LoadingState } from '../components/common/LoadingState';
-import { ErrorState } from '../components/common/ErrorState';
-import { EmptyState } from '../components/common/EmptyState';
-
-const STATUS_CONFIG: Record<
-  TaskStatus,
-  { label: string; icon: React.ElementType; colorClass: string; badgeClass: string }
-> = {
-  queued: {
-    label: 'Queued',
-    icon: Clock,
-    colorClass: 'text-amber-400',
-    badgeClass: 'bg-amber-950/40 text-amber-300 border-amber-800/60',
-  },
-  running: {
-    label: 'Running',
-    icon: RefreshCw,
-    colorClass: 'text-blue-400 animate-spin',
-    badgeClass: 'bg-blue-950/40 text-blue-300 border-blue-800/60',
-  },
-  succeeded: {
-    label: 'Succeeded',
-    icon: CheckCircle2,
-    colorClass: 'text-emerald-400',
-    badgeClass: 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60',
-  },
-  failed: {
-    label: 'Failed',
-    icon: XCircle,
-    colorClass: 'text-rose-400',
-    badgeClass: 'bg-rose-950/40 text-rose-300 border-rose-800/60',
-  },
-  cancelled: {
-    label: 'Cancelled',
-    icon: Ban,
-    colorClass: 'text-neutral-400',
-    badgeClass: 'bg-neutral-800 text-neutral-400 border-neutral-700',
-  },
-};
+import type { TaskItem, TaskStats, WorkerHealth } from '../types/task';
+import { TaskDetailsModal } from '../components/tasks/TaskDetailsModal';
 
 export const TasksView: React.FC = () => {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [stats, setStats] = useState<TaskStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [actionAlert, setActionAlert] = useState<string | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [health, setHealth] = useState<WorkerHealth | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
 
-  const fetchTasksAndStats = useCallback(async (isPolling = false) => {
-    if (!isPolling) setIsLoading(true);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [taskTypeFilter, setTaskTypeFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('created_desc');
+
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isSweeping, setIsSweeping] = useState<boolean>(false);
+  const [sweepResult, setSweepResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = useCallback(async (quiet = false) => {
+    if (!quiet) setIsLoading(true);
+    else setIsRefreshing(true);
     setError(null);
+
     try {
-      const [tasksRes, statsRes] = await Promise.all([
+      const [fetchedTasksRes, fetchedStats, fetchedHealth] = await Promise.all([
         taskService.listTasks({
-          status: statusFilter === 'all' ? undefined : statusFilter,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          task_type: taskTypeFilter !== 'all' ? taskTypeFilter : undefined,
+          search: searchQuery.trim() || undefined,
+          sort_by: sortBy,
           limit: 50,
+          offset: 0,
         }),
         taskService.getStats(),
+        taskService.getHealth(),
       ]);
-      setTasks(tasksRes.items);
-      setStats(statsRes);
+
+      setTasks(fetchedTasksRes.items);
+      setStats(fetchedStats);
+      setHealth(fetchedHealth);
     } catch (err: any) {
-      if (!isPolling) {
-        setError(err?.message || 'Failed to fetch background tasks.');
-      }
+      console.error('Failed to load tasks and health:', err);
+      setError(err?.message || 'Failed to load background worker data');
     } finally {
-      if (!isPolling) setIsLoading(false);
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, taskTypeFilter, searchQuery, sortBy]);
 
   useEffect(() => {
-    fetchTasksAndStats(false);
-  }, [fetchTasksAndStats]);
+    loadData();
+    const interval = setInterval(() => {
+      loadData(true);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
-  // Real-time polling timer for active background jobs
-  useEffect(() => {
-    if (autoRefresh) {
-      pollTimerRef.current = setInterval(() => {
-        fetchTasksAndStats(true);
-      }, 4000);
-    }
-    return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    };
-  }, [autoRefresh, fetchTasksAndStats]);
-
-  const handleRetryTask = async (taskId: string) => {
+  const handleSweepStale = async () => {
+    setIsSweeping(true);
+    setSweepResult(null);
     try {
-      await taskService.retryTask(taskId);
-      setActionAlert('Task queued for retry.');
-      fetchTasksAndStats(true);
-      setTimeout(() => setActionAlert(null), 3500);
+      const res = await taskService.sweepStaleTasks(300);
+      setSweepResult(`Swept ${res.swept_count} stale queued tasks successfully.`);
+      await loadData(true);
+      setTimeout(() => setSweepResult(null), 6000);
     } catch (err: any) {
-      alert(err?.message || 'Failed to retry task.');
+      console.error('Failed to sweep stale tasks:', err);
+      setSweepResult(`Error sweeping tasks: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsSweeping(false);
     }
   };
 
-  const handleCancelTask = async (taskId: string) => {
-    try {
-      await taskService.cancelTask(taskId);
-      setActionAlert('Task cancelled successfully.');
-      fetchTasksAndStats(true);
-      setTimeout(() => setActionAlert(null), 3500);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to cancel task.');
+  const getStatusBadge = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'succeeded':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950/40 text-emerald-400 border border-emerald-800/40">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Succeeded
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-950/40 text-rose-400 border border-rose-800/40">
+            <XCircle className="w-3.5 h-3.5" />
+            Failed
+          </span>
+        );
+      case 'running':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-950/40 text-blue-400 border border-blue-800/40 animate-pulse">
+            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+            Running
+          </span>
+        );
+      case 'queued':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-950/40 text-amber-400 border border-amber-800/40">
+            <Clock className="w-3.5 h-3.5" />
+            Queued
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {status}
+          </span>
+        );
     }
   };
 
-  const formatDuration = (ms?: number | null) => {
-    if (ms === null || ms === undefined) return '—';
-    if (ms < 1000) return `${Math.round(ms)} ms`;
-    return `${(ms / 1000).toFixed(2)} s`;
+  const getExecutionBadge = (mode?: string | null) => {
+    if (mode === 'celery_worker') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-purple-950/40 text-purple-300 border border-purple-800/40">
+          <Server className="w-3 h-3 text-purple-400" />
+          Celery Worker
+        </span>
+      );
+    }
+    if (mode === 'local_async') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-cyan-950/40 text-cyan-300 border border-cyan-800/40">
+          <Zap className="w-3 h-3 text-cyan-400" />
+          Local Async Fallback
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-800/60 text-zinc-400 border border-zinc-700/50">
+        <Clock className="w-3 h-3 text-zinc-500" />
+        Pending Execution
+      </span>
+    );
+  };
+
+  const formatWaitTime = (seconds?: number | null) => {
+    if (seconds === undefined || seconds === null) return 'N/A';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+    return `${(seconds / 3600).toFixed(1)}h`;
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-neutral-950 text-neutral-100 overflow-y-auto">
-      {/* Header */}
-      <div className="p-6 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm sticky top-0 z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-zinc-950 text-zinc-100 p-6 space-y-6">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400">
-              <CheckSquare className="w-5 h-5" />
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">Background Task Workers</h1>
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-blue-900/40 text-blue-300 border border-blue-700/50 flex items-center gap-1.5">
-              <Server className="w-3 h-3 text-blue-400" />
-              Redis + Celery
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <Cpu className="w-7 h-7 text-indigo-400" />
+              Background Task Workers
+            </h1>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/40">
+              Phase 2 Engine
             </span>
           </div>
-          <p className="text-xs text-neutral-400 mt-1">
-            Asynchronous background workers executing memory extraction, index maintenance, and proactive agent jobs.
+          <p className="text-sm text-zinc-400 mt-1">
+            Distributed task queue telemetry, live worker health monitoring, and semantic memory extraction transparency.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="rounded bg-neutral-900 border-neutral-700 accent-blue-500"
-            />
-            Auto-refresh (4s)
-          </label>
+          {Boolean(stats?.stale_queued_count && stats.stale_queued_count > 0) && (
+            <button
+              onClick={handleSweepStale}
+              disabled={isSweeping}
+              className="px-3.5 py-2 rounded-lg text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              title="Process older queued tasks using local async execution"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isSweeping ? 'animate-spin' : ''}`} />
+              {isSweeping ? 'Processing Tasks...' : `Process ${stats?.stale_queued_count} Stale Tasks`}
+            </button>
+          )}
+
           <button
-            onClick={() => fetchTasksAndStats(false)}
-            className="p-2 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg border border-neutral-700 transition"
-            title="Refresh"
+            onClick={() => loadData(true)}
+            disabled={isRefreshing}
+            className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors"
+            title="Refresh dashboard"
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
           </button>
         </div>
       </div>
 
-      <div className="p-6 max-w-7xl w-full mx-auto space-y-6">
-        {/* Action Alert Banner */}
-        {actionAlert && (
-          <div className="flex items-center gap-2 p-3 bg-blue-950/60 border border-blue-800 text-blue-300 rounded-lg text-xs">
-            <Activity className="w-4 h-4 shrink-0 text-blue-400" />
-            <span>{actionAlert}</span>
+      {/* Sweep Result Banner */}
+      {sweepResult && (
+        <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-800/50 text-amber-300 text-xs flex items-center justify-between animate-fade-in">
+          <div className="flex items-center gap-2">
+            <Info className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{sweepResult}</span>
           </div>
-        )}
+          <button onClick={() => setSweepResult(null)} className="text-amber-400 hover:text-amber-200 text-xs">
+            Dismiss
+          </button>
+        </div>
+      )}
 
-        {/* Status Metrics Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5">
-              <div className="text-neutral-400 text-xs">Total Tasks</div>
-              <div className="text-2xl font-bold mt-1 text-white">{stats.total}</div>
-            </div>
+      {/* Error Banner */}
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800/50 text-rose-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-200 text-xs">
+            Dismiss
+          </button>
+        </div>
+      )}
 
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5">
-              <div className="text-neutral-400 text-xs flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-400" />
-                Queued
-              </div>
-              <div className="text-2xl font-bold mt-1 text-amber-400">{stats.queued}</div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5">
-              <div className="text-neutral-400 text-xs flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />
-                Running
-              </div>
-              <div className="text-2xl font-bold mt-1 text-blue-400">{stats.running}</div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5">
-              <div className="text-neutral-400 text-xs flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                Succeeded
-              </div>
-              <div className="text-2xl font-bold mt-1 text-emerald-400">{stats.succeeded}</div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5">
-              <div className="text-neutral-400 text-xs flex items-center gap-1">
-                <XCircle className="w-3 h-3 text-rose-400" />
-                Failed
-              </div>
-              <div className="text-2xl font-bold mt-1 text-rose-400">{stats.failed}</div>
-            </div>
-
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5">
-              <div className="text-neutral-400 text-xs flex items-center gap-1">
-                <Ban className="w-3 h-3 text-neutral-400" />
-                Cancelled
-              </div>
-              <div className="text-2xl font-bold mt-1 text-neutral-400">{stats.cancelled}</div>
+      {/* Worker Health & Queue Metrics Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {/* Worker & Broker Health Card */}
+        <div className="lg:col-span-2 rounded-xl bg-zinc-900/60 border border-zinc-800/80 p-4 backdrop-blur-sm shadow-sm space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60">
+            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+              <Server className="w-4 h-4 text-indigo-400" />
+              Worker System Health
+            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  health?.celery_online ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              <span className="text-xs text-zinc-300 font-medium">
+                {health?.celery_online ? 'Celery Active' : 'Fallback Active'}
+              </span>
             </div>
           </div>
-        )}
 
-        {/* Filter Navigation Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-neutral-800">
-          {['all', 'running', 'queued', 'succeeded', 'failed', 'cancelled'].map((st) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+            {/* Redis Status */}
+            <div className="bg-zinc-950/50 rounded-lg p-2.5 border border-zinc-800/50">
+              <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-rose-400" />
+                Redis Broker
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span
+                  className={`text-sm font-semibold ${
+                    health?.redis_connected ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {health?.redis_connected ? 'Connected' : 'Offline'}
+                </span>
+                {health?.redis_latency_ms != null && (
+                  <span className="text-[10px] text-zinc-500">
+                    ({Math.round(health.redis_latency_ms)}ms)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Celery Online Workers */}
+            <div className="bg-zinc-950/50 rounded-lg p-2.5 border border-zinc-800/50">
+              <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-purple-400" />
+                Celery Workers
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span
+                  className={`text-sm font-semibold ${
+                    health?.celery_online ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                >
+                  {health?.worker_count ?? 0} Online
+                </span>
+                <span className="text-[10px] text-zinc-500">
+                  {health?.celery_online ? 'Consuming' : 'Idle'}
+                </span>
+              </div>
+            </div>
+
+            {/* Execution Strategy */}
+            <div className="bg-zinc-950/50 rounded-lg p-2.5 border border-zinc-800/50 col-span-2 sm:col-span-1">
+              <div className="text-[11px] text-zinc-400 font-medium flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                Current Strategy
+              </div>
+              <div className="mt-1">
+                <span className="text-xs font-semibold text-zinc-200">
+                  {health?.celery_online ? 'Worker Queue' : 'In-Process Loop'}
+                </span>
+                <p className="text-[10px] text-zinc-500 truncate">
+                  {health?.celery_online
+                    ? 'Celery pool (Redis broker)'
+                    : 'AsyncIO background task'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Queue Metrics Card */}
+        <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/80 p-4 backdrop-blur-sm shadow-sm space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60">
+            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400" />
+              Queue Latency
+            </span>
+            <span className="text-[11px] text-zinc-400">
+              Oldest: <strong className="text-zinc-200">{formatWaitTime(stats?.oldest_queued_wait_seconds)}</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="bg-zinc-950/50 rounded-lg p-2.5 border border-zinc-800/50">
+              <span className="text-[11px] text-zinc-400 block font-medium">Avg Wait Time</span>
+              <span className="text-base font-semibold text-zinc-200 mt-0.5 block">
+                {stats?.average_wait_seconds ? `${Math.round(stats.average_wait_seconds)}s` : '0s'}
+              </span>
+            </div>
+
+            <div className="bg-zinc-950/50 rounded-lg p-2.5 border border-zinc-800/50">
+              <span className="text-[11px] text-zinc-400 block font-medium">Stale (&gt;5m)</span>
+              <span
+                className={`text-base font-semibold mt-0.5 block ${
+                  (stats?.stale_queued_count ?? 0) > 0 ? 'text-amber-400' : 'text-zinc-400'
+                }`}
+              >
+                {stats?.stale_queued_count ?? 0}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Total Tasks Counter Card */}
+        <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/80 p-4 backdrop-blur-sm shadow-sm space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60">
+            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-4 h-4 text-blue-400" />
+              Task Execution Counts
+            </span>
+            <span className="text-xs text-zinc-400 font-mono">
+              Total: {stats?.total ?? 0}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2 pt-1 text-center">
+            <div className="bg-zinc-950/50 rounded p-1.5 border border-zinc-800/40">
+              <span className="text-[10px] text-amber-400 block font-medium">Queued</span>
+              <span className="text-sm font-bold text-amber-300">{stats?.queued ?? 0}</span>
+            </div>
+            <div className="bg-zinc-950/50 rounded p-1.5 border border-zinc-800/40">
+              <span className="text-[10px] text-blue-400 block font-medium">Running</span>
+              <span className="text-sm font-bold text-blue-300">{stats?.running ?? 0}</span>
+            </div>
+            <div className="bg-zinc-950/50 rounded p-1.5 border border-zinc-800/40">
+              <span className="text-[10px] text-emerald-400 block font-medium">Done</span>
+              <span className="text-sm font-bold text-emerald-300">{stats?.succeeded ?? 0}</span>
+            </div>
+            <div className="bg-zinc-950/50 rounded p-1.5 border border-zinc-800/40">
+              <span className="text-[10px] text-rose-400 block font-medium">Failed</span>
+              <span className="text-sm font-bold text-rose-300">{stats?.failed ?? 0}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter, Search & Sort Toolbar */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-2">
+        {/* Status Tabs */}
+        <div className="flex items-center bg-zinc-900/80 p-1 rounded-lg border border-zinc-800 overflow-x-auto">
+          {['all', 'queued', 'running', 'succeeded', 'failed'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition shrink-0 ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize whitespace-nowrap transition-colors ${
                 statusFilter === st
-                  ? 'bg-neutral-800 text-white border border-neutral-700'
-                  : 'text-neutral-400 hover:text-neutral-200'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               {st}
+              {stats && (
+                <span className="ml-1.5 text-[10px] opacity-60">
+                  {st === 'all'
+                    ? stats.total
+                    : st === 'queued'
+                    ? stats.queued
+                    : st === 'running'
+                    ? stats.running
+                    : st === 'succeeded'
+                    ? stats.succeeded
+                    : stats.failed}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
-        {/* Task Items List */}
-        {isLoading ? (
-          <LoadingState message="Loading background tasks..." />
-        ) : error ? (
-          <ErrorState message={error} onRetry={() => fetchTasksAndStats(false)} />
-        ) : tasks.length === 0 ? (
-          <EmptyState
-            title="No background tasks found"
-            description="Tasks dispatched during chat memory extraction or maintenance routines will appear here."
-          />
-        ) : (
-          <div className="space-y-3">
-            {tasks.map((task) => {
-              const statusCfg = STATUS_CONFIG[task.status as TaskStatus] || STATUS_CONFIG.queued;
-              const StatusIcon = statusCfg.icon;
+        {/* Search, Type Filter and Sort */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Search Box */}
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tasks or IDs..."
+              className="w-full pl-9 pr-3 py-1.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500/80 transition-colors"
+            />
+          </div>
 
-              const createdDate = new Date(task.created_at).toLocaleTimeString(undefined, {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-              });
+          {/* Task Type Filter */}
+          <div className="relative">
+            <select
+              value={taskTypeFilter}
+              onChange={(e) => setTaskTypeFilter(e.target.value)}
+              className="bg-zinc-900/80 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500/80 transition-colors cursor-pointer"
+            >
+              <option value="all">All Types</option>
+              <option value="extract_conversation_memories">Memory Extraction</option>
+              <option value="consolidate_memories">Memory Consolidation</option>
+              <option value="generate_embeddings">Embedding Generation</option>
+            </select>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="relative">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-zinc-900/80 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500/80 transition-colors cursor-pointer"
+            >
+              <option value="created_desc">Newest First</option>
+              <option value="created_asc">Oldest First</option>
+              <option value="duration_desc">Longest Duration</option>
+              <option value="duration_asc">Shortest Duration</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Task List Table */}
+      <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden flex flex-col min-h-0">
+        <div className="overflow-y-auto flex-1 divide-y divide-zinc-800/60">
+          {isLoading ? (
+            <div className="p-12 text-center text-zinc-500 flex flex-col items-center justify-center gap-3">
+              <RotateCw className="w-6 h-6 animate-spin text-indigo-400" />
+              <p className="text-sm">Loading background tasks and worker metrics...</p>
+            </div>
+          ) : tasks.length === 0 ? (
+            <div className="p-12 text-center text-zinc-500 flex flex-col items-center justify-center gap-2">
+              <Layers className="w-8 h-8 text-zinc-600" />
+              <p className="text-sm font-medium text-zinc-400">No background tasks found</p>
+              <p className="text-xs text-zinc-600 max-w-sm">
+                Tasks are automatically created during chat conversations to extract semantic memories asynchronously.
+              </p>
+            </div>
+          ) : (
+            tasks.map((task) => {
+              const resultData = (task.result_metadata_json || {}) as Record<string, any>;
+              const trace = resultData.extraction_trace;
+              const memoriesCount =
+                resultData.memories_extracted ??
+                trace?.pipeline_summary?.created_count ??
+                0;
 
               return (
                 <div
                   key={task.id}
-                  className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-neutral-700 transition"
+                  onClick={() => setSelectedTask(task)}
+                  className="p-4 hover:bg-zinc-800/40 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
                 >
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-neutral-200">{task.task_name}</span>
-                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-neutral-400">
-                        {task.task_type}
+                  {/* Left Column: Task Info */}
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="font-semibold text-sm text-zinc-200 group-hover:text-indigo-300 transition-colors truncate">
+                        {task.task_name}
                       </span>
-                      <span
-                        className={`text-[11px] font-medium px-2 py-0.5 rounded-md border flex items-center gap-1 ${statusCfg.badgeClass}`}
-                      >
-                        <StatusIcon className={`w-3 h-3 ${statusCfg.colorClass}`} />
-                        {statusCfg.label}
-                      </span>
+                      {getStatusBadge(task.status)}
+                      {getExecutionBadge(task.execution_mode ?? undefined)}
                     </div>
 
-                    <div className="flex items-center gap-4 text-xs text-neutral-400 flex-wrap">
-                      <span>Created: {createdDate}</span>
-                      <span>Duration: {formatDuration(task.duration_ms)}</span>
-                      {task.retry_count > 0 && <span>Retries: {task.retry_count} / {task.max_retries}</span>}
-                      {task.celery_task_id && (
-                        <span className="font-mono text-[10px] text-neutral-500">
-                          id: {task.celery_task_id.slice(0, 8)}...
-                        </span>
+                    <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+                      <span className="font-mono text-[11px] text-zinc-400">ID: {task.id.slice(0, 8)}</span>
+                      <span>•</span>
+                      <span>Created {new Date(task.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+
+                      {task.queue_wait_ms !== undefined && task.queue_wait_ms !== null && (
+                        <>
+                          <span>•</span>
+                          <span>Wait: {(task.queue_wait_ms / 1000).toFixed(1)}s</span>
+                        </>
+                      )}
+
+                      {task.duration_ms !== undefined && task.duration_ms !== null && (
+                        <>
+                          <span>•</span>
+                          <span>Execution: {(task.duration_ms / 1000).toFixed(2)}s</span>
+                        </>
+                      )}
+
+                      {task.source_conversation_title && (
+                        <>
+                          <span>•</span>
+                          <span className="text-zinc-400 truncate max-w-[200px]" title={task.source_conversation_title}>
+                            Conv: "{task.source_conversation_title}"
+                          </span>
+                        </>
                       )}
                     </div>
 
-                    {task.error_message && (
-                      <div className="p-2 bg-rose-950/30 border border-rose-800/40 rounded text-rose-300 text-xs mt-1">
-                        {task.error_message}
+                    {/* Extraction preview summary */}
+                    {task.status.toLowerCase() === 'succeeded' && (
+                      <div className="text-[11px] text-zinc-400 flex items-center gap-2 pt-0.5">
+                        <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-indigo-300 font-mono">
+                          {memoriesCount} memory saved
+                        </span>
+                        {trace?.pipeline_summary && (
+                          <span className="text-zinc-500">
+                            ({trace.pipeline_summary.duplicates_detected} duplicates, {trace.pipeline_summary.sensitive_filtered} sensitive filtered)
+                          </span>
+                        )}
                       </div>
                     )}
 
-                    {task.result_metadata && (
-                      <div className="text-[11px] text-neutral-400">
-                        Result:{' '}
-                        <span className="font-mono text-neutral-300">
-                          {JSON.stringify(task.result_metadata)}
-                        </span>
-                      </div>
+                    {/* Error preview */}
+                    {task.error_message && (
+                      <p className="text-xs text-rose-400 font-mono truncate max-w-xl">
+                        Error: {task.error_message}
+                      </p>
                     )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    {(task.status === 'failed' || task.status === 'cancelled') && (
-                      <button
-                        onClick={() => handleRetryTask(task.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-xs font-medium border border-neutral-700 transition"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Retry
-                      </button>
-                    )}
-
-                    {(task.status === 'queued' || task.status === 'running') && (
-                      <button
-                        onClick={() => handleCancelTask(task.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-rose-950/40 text-neutral-400 hover:text-rose-300 rounded-lg text-xs font-medium border border-neutral-700 transition"
-                      >
-                        <Ban className="w-3.5 h-3.5" />
-                        Cancel
-                      </button>
-                    )}
+                  {/* Right Column: Click Details Arrow */}
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <span className="text-xs text-zinc-500 group-hover:text-zinc-300 font-medium transition-colors hidden sm:inline">
+                      View Transparency Trace
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-zinc-300 transition-colors" />
                   </div>
                 </div>
               );
-            })}
-          </div>
-        )}
+            })
+          )}
+        </div>
       </div>
+
+      {/* Slide-Over Drawer Details Modal */}
+      {selectedTask && (
+        <TaskDetailsModal
+          task={selectedTask}
+          isOpen={Boolean(selectedTask)}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
     </div>
   );
 };
+export default TasksView;

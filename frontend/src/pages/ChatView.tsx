@@ -6,8 +6,10 @@ import { conversationService } from '../services/conversationService';
 import { streamChatMessage } from '../services/chatStreamService';
 import { providerService } from '../services/providerService';
 import { modelService } from '../services/modelService';
+import { voiceService } from '../services/voiceService';
 import type { Conversation, ConversationSummary, Message } from '../types/chat';
 import type { ProviderConfigResponse, CentralModelInfo, ModelPolicyResponse } from '../types/provider';
+import type { VoicePreferences } from '../types/voice';
 import {
   Sparkles,
   AlertCircle,
@@ -16,6 +18,8 @@ import {
   ShieldCheck,
   Coins,
   ArrowRightLeft,
+  Volume2,
+  X,
 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -29,10 +33,23 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [toolNotice, setToolNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [models, setModels] = useState<CentralModelInfo[]>([]);
   const [modelPolicy, setModelPolicy] = useState<ModelPolicyResponse | null>(null);
   const [providers, setProviders] = useState<ProviderConfigResponse[]>([]);
+
+  // Voice State & Settings
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [voicePrefs, setVoicePrefs] = useState<VoicePreferences>({
+    enabled: true,
+    auto_play: false,
+    speed: 1.0,
+    voice: null,
+    language: 'en-US',
+  });
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -69,6 +86,32 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     }
   }, []);
 
+  // Initialize Voice state & preferences
+  useEffect(() => {
+    voiceService.setOnStateChange((isPlaying, msgId) => {
+      setPlayingMessageId(isPlaying ? msgId : null);
+    });
+
+    voiceService.getPreferences().then((prefs) => {
+      setVoicePrefs(prefs);
+    });
+
+    // Load available voices from SpeechSynthesis
+    const updateVoices = () => {
+      const voices = voiceService.getAvailableVoices();
+      setAvailableVoices(voices);
+    };
+
+    updateVoices();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+
+    return () => {
+      voiceService.stop();
+    };
+  }, []);
+
   useEffect(() => {
     loadConversations().then((list) => {
       if (list.length > 0 && !activeId) {
@@ -86,6 +129,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     try {
       setError(null);
       setFallbackNotice(null);
+      voiceService.stop();
       const conv = await conversationService.getConversation(id);
       setActiveConversation(conv);
       setActiveId(id);
@@ -98,8 +142,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     try {
       setError(null);
       setFallbackNotice(null);
+      voiceService.stop();
       const defaultModel = modelPolicy?.selected_model || 'nvidia/nemotron-3.5-lightning:free';
-
       const newConv = await conversationService.createConversation({
         title: 'New Conversation',
         model: defaultModel,
@@ -115,10 +159,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const handleRename = async (id: string, newTitle: string) => {
     try {
       await conversationService.updateConversation(id, { title: newTitle });
-      await loadConversations();
-      if (activeConversation && activeConversation.id === id) {
+      if (activeConversation?.id === id) {
         setActiveConversation({ ...activeConversation, title: newTitle });
       }
+      await loadConversations();
     } catch (err: any) {
       setError(err?.message || 'Failed to rename conversation.');
     }
@@ -126,15 +170,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
 
   const handleDelete = async (id: string) => {
     try {
+      voiceService.stop();
       await conversationService.deleteConversation(id);
-      const remaining = await loadConversations();
       if (activeId === id) {
-        if (remaining.length > 0) {
-          selectConversation(remaining[0].id);
-        } else {
-          setActiveConversation(null);
-          setActiveId(null);
-        }
+        setActiveConversation(null);
+        setActiveId(null);
+      }
+      const list = await loadConversations();
+      if (list.length > 0) {
+        selectConversation(list[0].id);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to delete conversation.');
@@ -144,7 +188,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const handleModelChange = async (newModel: string) => {
     if (!activeConversation) return;
 
-    // Check if user is in free-only mode and trying to select a paid model
     if (modelPolicy?.model_mode === 'free_only') {
       const target = models.find((m) => m.id === newModel);
       if (target && target.pricing_category === 'paid') {
@@ -161,6 +204,20 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     } catch (err: any) {
       setError(err?.message || 'Failed to switch model.');
     }
+  };
+
+  // Voice Toggle Play/Stop
+  const handleToggleAudio = (message: Message) => {
+    if (playingMessageId === message.id) {
+      voiceService.stop();
+    } else {
+      voiceService.speak(message.id, message.content, voicePrefs);
+    }
+  };
+
+  const handleSaveVoicePrefs = async (updated: VoicePreferences) => {
+    setVoicePrefs(updated);
+    await voiceService.updatePreferences(updated);
   };
 
   const handleSendMessage = async (content: string) => {
@@ -240,8 +297,34 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
         onNotice: (notice) => {
           setFallbackNotice(notice);
         },
+        onToolCall: (call) => {
+          setToolNotice(`Executing tool: ${call.tool}...`);
+        },
+        onToolResult: (res) => {
+          setToolNotice(res.success ? `Tool '${res.tool}' succeeded.` : `Tool '${res.tool}' failed: ${res.error || 'error'}`);
+          setTimeout(() => setToolNotice(null), 3500);
+        },
+        onApprovalRequired: (app) => {
+          setToolNotice(`Action requires approval: ${app.tool}`);
+        },
+        onResetBuffer: () => {
+          setActiveConversation((prev) => {
+            if (!prev) return null;
+            const updated = [...prev.messages];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = {
+                ...last,
+                content: '',
+                isStreaming: true,
+              };
+            }
+            return { ...prev, messages: updated };
+          });
+        },
         onDone: (result) => {
           setIsStreaming(false);
+          setToolNotice(null);
           abortControllerRef.current = null;
           setActiveConversation((prev) => {
             if (!prev) return null;
@@ -258,6 +341,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
                   pricing_category: result.pricing_category,
                   latency_ms: result.latency_ms,
                   fallback_used: result.fallback_used,
+                  approval_id: result.approval_id,
                 }),
                 isStreaming: false,
               };
@@ -265,6 +349,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
             return { ...prev, messages: updated };
           });
           loadConversations();
+
+
+          // Auto-play if enabled in preferences
+          if (voicePrefs.enabled && voicePrefs.auto_play && result.content) {
+            voiceService.speak(result.message_id, result.content, voicePrefs);
+          }
         },
         onError: (streamError) => {
           setIsStreaming(false);
@@ -307,6 +397,20 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     }
   };
 
+  // Regenerate last assistant response
+  const handleRegenerate = () => {
+    if (!activeConversation || isStreaming) return;
+    const messages = activeConversation.messages;
+    const lastUserIndex = [...messages].reverse().findIndex((m) => m.role === 'user');
+    if (lastUserIndex === -1) return;
+
+    const actualUserIndex = messages.length - 1 - lastUserIndex;
+    const userMessage = messages[actualUserIndex];
+    if (userMessage) {
+      handleSendMessage(userMessage.content);
+    }
+  };
+
   const activeProvider = providers.find((p) => p.is_active) || providers[0];
   const hasApiKey = activeProvider?.has_api_key ?? false;
 
@@ -315,6 +419,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
 
   const currentModelId = activeConversation?.model || modelPolicy?.selected_model || 'nvidia/nemotron-3.5-lightning:free';
   const currentModelMeta = models.find((m) => m.id === currentModelId);
+
+  // Find index of last assistant message for regenerate action
+  const lastAssistantIndex = activeConversation
+    ? [...activeConversation.messages].map((m) => m.role).lastIndexOf('assistant')
+    : -1;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] -m-4 md:-m-8 bg-slate-950 overflow-hidden">
@@ -349,8 +458,22 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
             </div>
           </div>
 
-          {/* Policy Mode Badge & Model Selector */}
+          {/* Voice Settings & Model Selector */}
           <div className="flex items-center gap-2">
+            {/* Voice Audio Settings Button */}
+            <button
+              onClick={() => setIsVoiceModalOpen(true)}
+              className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
+                voicePrefs.enabled
+                  ? 'bg-indigo-950/40 border-indigo-700/50 text-indigo-300 hover:bg-indigo-900/50'
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Voice Settings (Speech Input & Output)"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden md:inline font-medium">Voice</span>
+            </button>
+
             {/* Operational Mode Pill */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border bg-slate-950 border-slate-800">
               {modelPolicy?.model_mode === 'free_only' ? (
@@ -377,7 +500,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
               <select
                 value={currentModelId}
                 onChange={(e) => handleModelChange(e.target.value)}
-                className="bg-transparent text-slate-200 text-xs outline-none cursor-pointer max-w-[200px] sm:max-w-[280px] truncate"
+                className="bg-transparent text-slate-200 text-xs outline-none cursor-pointer max-w-[180px] sm:max-w-[260px] truncate"
               >
                 <optgroup label="Free Models (Zero Cost)">
                   {freeModels.map((m) => (
@@ -465,7 +588,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
               <h3 className="text-base font-bold text-white mb-1">Provider-Independent AI Assistant</h3>
               <p className="text-xs text-slate-400 leading-relaxed mb-4">
                 {modelPolicy?.model_mode === 'free_only'
-                  ? 'Free-Only mode is active. You can chat with open weights reasoning models at zero cost with automated fallback chains.'
+                  ? 'Free-Only mode is active. Chat using text or microphone voice input with natural formatting and real-time streaming.'
                   : 'Start a conversation with your configured AI provider and preferred model.'}
               </p>
               {currentModelMeta && (
@@ -480,15 +603,32 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
             </div>
           ) : (
             <>
-              {activeConversation.messages.map((message) => (
-                <ChatMessage key={message.id} message={message} />
+              {activeConversation.messages.map((message, index) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isPlayingAudio={playingMessageId === message.id}
+                  onToggleAudio={() => handleToggleAudio(message)}
+                  isLastAssistant={index === lastAssistantIndex}
+                  onRegenerate={handleRegenerate}
+                  onApprovalDecided={loadConversations}
+                />
               ))}
               <div ref={messagesEndRef} />
             </>
           )}
         </div>
 
-        {/* Interactive Chat Input Bar */}
+        {/* Real-time Tool Status Indicator */}
+        {toolNotice && (
+          <div className="mx-4 mb-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
+            <span className="font-mono">{toolNotice}</span>
+          </div>
+        )}
+
+        {/* Interactive Chat Input Bar with Microphone & Text Input */}
+
         <ChatInput
           onSendMessage={handleSendMessage}
           onStopGeneration={handleStopGeneration}
@@ -496,11 +636,113 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
           disabled={false}
           placeholder={
             modelPolicy?.model_mode === 'free_only'
-              ? 'Ask anything (Free-Only Mode • Zero Cost)...'
-              : 'Ask anything...'
+              ? 'Ask anything or click mic to speak (Free-Only Mode)...'
+              : 'Ask anything or click mic to speak...'
           }
         />
       </div>
+
+      {/* Voice Settings Modal */}
+      {isVoiceModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative space-y-5">
+            <button
+              onClick={() => setIsVoiceModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-200 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
+                <Volume2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">Voice Conversation Settings</h3>
+                <p className="text-xs text-slate-400">Configure speech input and text-to-speech audio playback.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Voice Enabled Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Voice Output Enabled</div>
+                  <div className="text-[11px] text-slate-400">Show speaker button to read assistant responses aloud.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={voicePrefs.enabled}
+                  onChange={(e) => handleSaveVoicePrefs({ ...voicePrefs, enabled: e.target.checked })}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer"
+                />
+              </div>
+
+              {/* Auto-Play Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Auto-Play Responses</div>
+                  <div className="text-[11px] text-slate-400">Automatically speak answers as soon as generation completes.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={voicePrefs.auto_play}
+                  onChange={(e) => handleSaveVoicePrefs({ ...voicePrefs, auto_play: e.target.checked })}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-900 border-slate-700 cursor-pointer"
+                />
+              </div>
+
+              {/* Voice Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Speech Voice</label>
+                <select
+                  value={voicePrefs.voice || ''}
+                  onChange={(e) => handleSaveVoicePrefs({ ...voicePrefs, voice: e.target.value || null })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500"
+                >
+                  <option value="">Default System Voice</option>
+                  {availableVoices.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Speech Speed Slider */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-300">Speech Speed</span>
+                  <span className="font-mono text-indigo-400">{voicePrefs.speed}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={voicePrefs.speed}
+                  onChange={(e) => handleSaveVoicePrefs({ ...voicePrefs, speed: parseFloat(e.target.value) })}
+                  className="w-full accent-indigo-500 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-slate-500">
+                  <span>0.5x Slower</span>
+                  <span>1.0x Normal</span>
+                  <span>2.0x Faster</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setIsVoiceModalOpen(false)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium transition cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

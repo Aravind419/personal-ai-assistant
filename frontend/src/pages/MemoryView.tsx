@@ -22,9 +22,18 @@ import { EmptyState } from '../components/common/EmptyState';
 
 const CATEGORIES = [
   { id: 'all', label: 'All Categories' },
-  { id: 'profile', label: 'Profile' },
+  { id: 'relationships', label: 'Relationships' },
+  { id: 'personal_facts', label: 'Personal Facts' },
+  { id: 'education', label: 'Education' },
+  { id: 'career_goals', label: 'Career Goals' },
+  { id: 'technical_skills', label: 'Technical Skills' },
   { id: 'preferences', label: 'Preferences' },
   { id: 'projects', label: 'Projects' },
+  { id: 'important_events', label: 'Important Events' },
+  { id: 'decisions', label: 'Decisions' },
+  { id: 'ongoing_activities', label: 'Ongoing Activities' },
+  { id: 'communication_preferences', label: 'Communication Preferences' },
+  { id: 'profile', label: 'Profile' },
   { id: 'technical_knowledge', label: 'Technical Knowledge' },
   { id: 'goals', label: 'Goals' },
   { id: 'episodic', label: 'Episodic' },
@@ -33,9 +42,18 @@ const CATEGORIES = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  profile: 'bg-purple-900/30 text-purple-300 border-purple-700/50',
+  relationships: 'bg-rose-900/30 text-rose-300 border-rose-700/50',
+  personal_facts: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
+  education: 'bg-teal-900/30 text-teal-300 border-teal-700/50',
+  career_goals: 'bg-orange-900/30 text-orange-300 border-orange-700/50',
+  technical_skills: 'bg-sky-900/30 text-sky-300 border-sky-700/50',
   preferences: 'bg-blue-900/30 text-blue-300 border-blue-700/50',
   projects: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
+  important_events: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
+  decisions: 'bg-violet-900/30 text-violet-300 border-violet-700/50',
+  ongoing_activities: 'bg-lime-900/30 text-lime-300 border-lime-700/50',
+  communication_preferences: 'bg-fuchsia-900/30 text-fuchsia-300 border-fuchsia-700/50',
+  profile: 'bg-purple-900/30 text-purple-300 border-purple-700/50',
   technical_knowledge: 'bg-cyan-900/30 text-cyan-300 border-cyan-700/50',
   goals: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
   episodic: 'bg-pink-900/30 text-pink-300 border-pink-700/50',
@@ -323,10 +341,33 @@ export const MemoryView: React.FC = () => {
                   className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex flex-col justify-between hover:border-neutral-700 transition space-y-3 group"
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium ${colorClass}`}>
-                        {mem.category.replace('_', ' ')}
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`text-[11px] px-2 py-0.5 rounded-md border font-medium ${colorClass}`}>
+                          {mem.category.replace('_', ' ')}
+                        </span>
+                        {mem.subcategory && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700/60 font-mono">
+                            {mem.subcategory.replace('_', ' ')}
+                          </span>
+                        )}
+                        {mem.temporal_scope && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                            mem.temporal_scope === 'current'
+                              ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/60'
+                              : mem.temporal_scope === 'previous'
+                              ? 'bg-amber-950/60 text-amber-300 border border-amber-800/60'
+                              : 'bg-neutral-800/60 text-neutral-400 border border-neutral-700/40'
+                          }`}>
+                            {mem.temporal_scope}
+                          </span>
+                        )}
+                        {mem.is_current === false && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700/40">
+                            historical
+                          </span>
+                        )}
+                      </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-neutral-400">
                         <span title="Importance score">Importance: {Math.round(mem.importance * 100)}%</span>
@@ -336,6 +377,12 @@ export const MemoryView: React.FC = () => {
                     </div>
 
                     <p className="text-sm text-neutral-200 leading-relaxed font-normal">{mem.content}</p>
+
+                    {mem.original_statement && (
+                      <p className="text-[11px] text-neutral-400 mt-1 italic font-mono bg-neutral-950/50 px-2 py-1 rounded border border-neutral-800/50">
+                        "{mem.original_statement}"
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-3 border-t border-neutral-800/60 flex items-center justify-between text-xs text-neutral-500">

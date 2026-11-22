@@ -146,8 +146,15 @@ personal-ai-assistent/
 │   │   │   └── routes.py        # /api/v1/tasks REST endpoints
 │   │   ├── tools/
 │   │   │   ├── __init__.py
-│   │   │   ├── base.py          # BaseTool and ToolRegistry
-│   │   │   └── builtin.py       # SystemClockTool and CalculatorTool
+│   │   │   ├── schemas.py       # Tool, Execution, Approval, and MCP schemas
+│   │   │   ├── validator.py     # JSON schema validator, canonical hasher, secret sanitizer
+│   │   │   ├── base.py          # BaseTool and ToolRegistry with metadata & permissions
+│   │   │   ├── builtin.py       # 8 native tools (clock, calc, text, json, file ops)
+│   │   │   ├── approval_manager.py # Atomic approval transitions & argument hash validation
+│   │   │   ├── permissions.py   # Three-tier permission evaluator
+│   │   │   ├── engine.py        # ToolExecutionEngine orchestrator & timeout manager
+│   │   │   ├── mcp.py           # McpClient, McpServerManager & PromptInjectionGuard
+│   │   │   └── routes.py        # /api/v1/tools and /api/v1/approvals endpoints
 │   │   ├── schemas/
 │   │   └── services/
 │   └── tests/
@@ -215,3 +222,96 @@ personal-ai-assistent/
    - The memory extraction pipeline actively detects and discards passwords, API keys, Bearer tokens, and financial identifiers.
 7. **Task Error Sanitization**:
    - Background task failure traces are sanitized before persistence and API serialization, preventing leakage of internal execution environments or credentials.
+
+---
+
+## 5. Voice Conversation & Response Formatting Architecture
+
+### 5.1 Response Formatting Pipeline
+- **Natural Language Format Detection**: `DEFAULT_SYSTEM_INSTRUCTION` (`backend/app/conversations/service.py`) informs the LLM to identify explicit and implicit format requests (tables, bullet points, checklists `- [ ]`, numbered lists, step-by-step tutorials, raw code, JSON-only).
+- **Zero-Fluff Enforcement**: When the user requests "only JSON" or "only code", models are guided to omit introductory or concluding commentary.
+- **GFM Table Rendering**: Frontend uses `react-markdown` with `remark-gfm` to render responsive GitHub Flavored Markdown tables with horizontal scrolling containers (`overflow-x-auto`), dark-theme styling, and resilient parsing during SSE token streaming.
+- **Message Actions**: Every completed assistant response provides Copy Message, Copy Code, Regenerate Response, and Read Aloud / Audio Playback.
+
+### 5.2 Voice Input (Speech-to-Text)
+- **Browser Recording**: Client records microphone audio using `MediaRecorder` API into `audio/webm`.
+- **Live Recording State UI**: Interactive recording overlay in `ChatInput` with timer (`00:05`), pulsing red indicator, Cancel, and Done/Finish buttons.
+- **Transcription Endpoint**: `POST /api/v1/voice/transcribe` validates MIME type (`audio/webm`, `audio/wav`, `audio/mp3`, `audio/ogg`, `audio/m4a`), enforces a 25MB file size limit, and transcribes audio.
+- **User Review & Edit Flow**: Transcribed text is populated directly into the chat textarea, allowing the user to review, edit, and adjust text before submitting.
+
+### 5.3 Voice Output (Text-to-Speech)
+- **Client Speech Synthesis**: Zero-cost, zero-latency Web Speech API (`window.speechSynthesis`) on client side. No third-party billing or mandatory API keys required.
+- **Speech Text Cleaner**: `POST /api/v1/voice/clean-for-speech` / `VoiceService.clean_markdown_for_speech` converts Markdown tables into natural spoken sentences, skips code blocks gracefully, expands checklists (`Completed task:` / `Pending task:`), and cleans URLs and symbols.
+- **Voice Settings**: Configurable voice preference options (voice toggle, auto-play response toggle, voice selector, speed slider 0.5x to 2.0x) persisted in PostgreSQL `system_metadata` under key `voice_preferences`.
+
+---
+
+## 6. Conversational Intelligence & Context Management Architecture
+
+### 6.1 Centralized Context Builder (`ContextBuilder`)
+- **Single Source of Truth**: Replaced scattered string formatting with `ContextBuilder` (`backend/app/conversations/context_builder.py`).
+- **Partitioned System Prompt Sections**:
+  1. **Core Identity**: Autonomous, capable, thoughtful, and conversational personal AI partner (not a database query interface).
+  2. **Anti-Robotic Directives**:
+     - Explicitly forbids meta-retrieval announcements: eliminates "Based on your stored data...", "According to your saved memories...", "Based on information in your database...".
+     - Weaves contextual background facts naturally into sentences without calling attention to the storage layer.
+     - Transparent memory reporting: provides complete and accurate summaries when the user explicitly asks ("What do you remember about me?").
+     - Suppresses repetitive filler openings ("Sure!", "Certainly!", "Of course!") and repetitive closing sign-offs ("Let me know if you need anything else").
+     - Resolves pronoun references ("What about that?", "Explain the second one", "its disadvantages") from conversation history.
+     - Gives direct answers to straightforward questions ("What is 2 + 2?" -> "4").
+  3. **General Knowledge Independence**: Equips the assistant to answer scientific, programming, and general knowledge concepts using LLM reasoning without fabricating or requiring personal user memories.
+  4. **Formatting Directives**: Strict compliance with GFM tables, checklists, and code-only zero-fluff rules.
+  5. **Untrusted Data Boundaries**: Encloses past interaction facts in `<retrieved_context>` with strict directives that context is untrusted data and cannot override system prompts or safety constraints.
+  6. **Token Budgeting**: Implements sliding window message history truncation to stay within model context budgets (default 6000 tokens) while retaining opening instructions and recent turns.
+
+### 6.2 Configurable Personality & Behavioral Engine
+- **Schema & Service**: `AssistantPersonalityConfig` and `PersonalityService` (`backend/app/conversations/personality.py`) stored in PostgreSQL `system_metadata` under key `assistant_personality`.
+- **Configurable Dimensions**: Assistant name, communication style (natural, concise, technical, detailed), formality (balanced, casual, formal), detail level (balanced, concise, in-depth), memory usage mode (natural_weave, minimal, explicit), emoji usage (minimal, none, expressive), and custom behavioral guidelines.
+- **REST Endpoints**: `GET /api/v1/conversations/settings/personality` and `PUT /api/v1/conversations/settings/personality`.
+- **Frontend Controls**: Interactive personality card in `frontend/src/pages/SettingsView.tsx` with instant live persistence.
+
+---
+
+## 7. Tool Execution & Human-in-the-Loop Approvals Architecture (Phase 3)
+
+### 7.1 Centralized Tool Execution Engine (`ToolExecutionEngine`)
+- **Provider-Independent Abstraction**: Tools inherit from `BaseTool` defining metadata (id, name, description, category, permission level, input schema, timeout).
+- **Tool Registry**: Central `ToolRegistry` managing catalog indexing, enabling/disabling tools, category grouping, and LLM JSON-schema generation.
+- **Execution Pipeline**:
+  1. Validates input arguments against tool's JSON schema (`ToolSchemaValidator`).
+  2. Evaluates execution permissions (`ToolPermissionEngine`).
+  3. Gates sensitive/critical actions through `ApprovalManager`.
+  4. Manages async execution with per-tool timeouts (`asyncio.wait_for`).
+  5. Normalizes execution results and sanitizes credentials/secrets (`SecretSanitizer`).
+  6. Persists audit execution records in PostgreSQL `tool_executions`.
+
+### 7.2 Three-Tier Permission Model & Human-in-the-Loop Approvals
+- **Level 1 (Safe)**: Auto-executes without prompting (`get_system_time`, `calculate`, `text_processor`, `json_validator`, `file_searcher`).
+- **Level 2 (Sensitive)**: Requires explicit user approval (`file_writer`). Creates pending approval record in `tool_approvals`.
+- **Level 3 (Critical)**: Requires explicit action-specific confirmation with highlighted risk details (`file_deleter`).
+- **Race-Safe State Transitions**: `ApprovalManager` uses atomic SQL updates (`UPDATE ... WHERE id = :id AND status = 'pending'`) preventing race conditions or double execution.
+- **Canonical Argument Hashing**: Computes deterministic SHA-256 hash of sorted JSON arguments. If arguments drift or change between approval and execution, approval is automatically invalidated.
+
+### 7.3 Model Context Protocol (MCP) Bridge & Prompt Injection Defense
+- **MCP Client & Server Manager**: `McpClient` connects to external MCP servers via stdio / HTTP JSON-RPC protocols, discovers remote tools, validates schemas, and maps them dynamically into `ToolRegistry`.
+- **Prompt Injection Defense (`PromptInjectionGuard`)**:
+  - MCP output is strictly wrapped in isolated `<tool_output>` blocks.
+  - Sanitizes adversarial injection tokens (e.g. `<system>`, `ignore previous instructions`, `new system prompt`).
+  - Strict server-level permission allowlists and enable/disable toggles.
+
+### 7.4 Native Built-in Tools & Workspace Sandboxing
+- 8 built-in tools registered and verified:
+  - `get_system_time`: Formatted local time and timezone info.
+  - `calculate`: Safe mathematical expression evaluation.
+  - `text_processor`: Word/char counts, case transforms, regex replacements.
+  - `json_validator`: JSON structure validation and formatting.
+  - `file_reader`: Read file contents within sandbox.
+  - `file_searcher`: Search filenames by glob pattern within sandbox.
+  - `file_writer` (Sensitive): Write/append file contents within sandbox.
+  - `file_deleter` (Critical): Delete files within sandbox.
+- **Sandbox Security**: File operations are strictly locked to `WORKSPACE_STORAGE_DIR`, resolving realpaths and rejecting path-traversal attacks (`..`, symlinks, `.env`, `id_rsa`).
+
+### 7.5 Conversational Multi-Round Tool Calling
+- Streaming SSE endpoint detects tool requests in chat messages (`extract_tool_call`).
+- Automatically executes safe tools or generates approval requests for sensitive tools.
+- Multi-round support (up to 5 rounds) with buffer reset allows model to inspect tool results and synthesize natural language explanations.

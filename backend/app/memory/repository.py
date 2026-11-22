@@ -46,12 +46,18 @@ class MemoryRepository:
         category: Optional[str] = None,
         search: Optional[str] = None,
         is_archived: Optional[bool] = False,
+        temporal_scope: Optional[str] = None,
+        is_current: Optional[bool] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> Tuple[List[Memory], int]:
         filters = []
         if is_archived is not None:
             filters.append(Memory.is_archived == is_archived)
+        if is_current is not None:
+            filters.append(Memory.is_current == is_current)
+        if temporal_scope and temporal_scope.strip():
+            filters.append(Memory.temporal_scope == temporal_scope.strip().lower())
         if category and category.strip():
             filters.append(Memory.category == category.strip().lower())
         if search and search.strip():

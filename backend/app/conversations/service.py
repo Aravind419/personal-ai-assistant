@@ -1,7 +1,8 @@
+import re
 import json
 import time
 import uuid
-from typing import List, Optional, AsyncIterator
+from typing import List, Optional, AsyncIterator, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
@@ -25,9 +26,47 @@ from app.providers.schemas import (
 from app.providers.registry import ProviderRegistry
 from app.providers.model_registry import CentralModelRegistry
 from app.providers.model_service import ModelService
+from app.conversations.personality import PersonalityService
+from app.conversations.context_builder import ContextBuilder
+from app.tools.engine import ToolExecutionEngine
+from app.tools.schemas import ExecutionStatus
 from app.core.exceptions import ResourceNotFoundException
 from app.core.logging import logger
 from app.core.config import settings
+
+
+def extract_tool_call(content: str) -> Optional[Tuple[str, dict[str, Any]]]:
+    """
+    Detects whether LLM output contains an intentional tool call request.
+    Extracts tool name and arguments dictionary.
+    """
+    if not content:
+        return None
+    # 1. Look for ```json ... ``` blocks
+    json_blocks = re.findall(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content)
+    for block in json_blocks:
+        try:
+            data = json.loads(block)
+            if isinstance(data, dict) and data.get("action") == "call_tool" and "tool" in data:
+                return str(data["tool"]), data.get("arguments", {})
+        except Exception:
+            pass
+
+    # 2. Look for raw JSON object with "action": "call_tool"
+    matches = re.findall(r'(\{\s*"action"\s*:\s*"call_tool"[\s\S]*?\})', content)
+    for match in matches:
+        try:
+            data = json.loads(match)
+            if isinstance(data, dict) and data.get("action") == "call_tool" and "tool" in data:
+                return str(data["tool"]), data.get("arguments", {})
+        except Exception:
+            pass
+
+    return None
+
+
+DEFAULT_SYSTEM_INSTRUCTION = ContextBuilder.build_system_prompt()
+
 
 
 class ConversationService:
@@ -284,32 +323,42 @@ class ConversationService:
 
         await db.commit()
 
-        # 4. Build prompt context
-        chat_messages: List[ChatMessage] = []
-        for m in conv.messages:
-            chat_messages.append(ChatMessage(role=ChatMessageRole(m.role), content=m.content))
-        chat_messages.append(ChatMessage(role=ChatMessageRole.USER, content=user_content))
+        # 4. Resolve personality settings and memory context
+        personality = await PersonalityService.get_personality(db)
+        mem_ctx = ""
+        try:
+            from app.memory.retrieval import retrieve_relevant_memory_context
+            mem_ctx = await retrieve_relevant_memory_context(user_content, session=db)
+        except Exception as e:
+            logger.warning(f"Memory context retrieval failed non-fatally: {e}")
 
-        # 5. Resolve provider adapter
+        # 5. Assemble system prompt via centralized ContextBuilder
+        tools_catalog = ContextBuilder.format_tools_catalog()
+        sys_prompt = ContextBuilder.build_system_prompt(
+            personality=personality,
+            conversation_system_prompt=conv.system_prompt,
+            override_system_prompt=override_system_prompt,
+            memory_context=mem_ctx,
+            available_tools_description=tools_catalog,
+        )
+
+
+        # 6. Build chat messages with token budgeting & sliding window
+        chat_messages: List[ChatMessage] = ContextBuilder.build_chat_messages(
+            history=conv.messages,
+            current_user_content=user_content,
+        )
+
+        # 7. Resolve provider adapter
         try:
             p_type = ProviderType(conv.provider_type)
         except Exception:
             p_type = ProviderType.OPENROUTER
 
         provider_adapter = await ProviderRegistry.get_adapter_instance(p_type, db=db)
-        sys_prompt = override_system_prompt or conv.system_prompt
-
-        # 4.5 Retrieve semantic memory context (Phase 2)
-        try:
-            from app.memory.retrieval import retrieve_relevant_memory_context
-            mem_ctx = await retrieve_relevant_memory_context(user_content, session=db)
-            if mem_ctx:
-                sys_prompt = f"{sys_prompt}\n\n{mem_ctx}" if sys_prompt else mem_ctx
-        except Exception as e:
-            logger.warning(f"Memory context retrieval failed non-fatally: {e}")
 
         # Approximate prompt tokens (1 token ~ 4 chars)
-        prompt_chars = sum(len(m.content) for m in chat_messages)
+        prompt_chars = sum(len(m.content) for m in chat_messages) + len(sys_prompt)
         approx_prompt_tokens = max(1, prompt_chars // 4)
 
         # 6. Fallback Chain Execution Loop
@@ -372,10 +421,117 @@ class ConversationService:
                     # Proceed to next fallback model in the chain
                     continue
 
+                # Stream round 1 finished
+                assembled_content = "".join(full_content)
+                tool_call = extract_tool_call(assembled_content)
+
+                if tool_call:
+                    tool_name, tool_args = tool_call
+                    tool_call_notice = json.dumps({"type": "tool_call", "tool": tool_name, "arguments": tool_args})
+                    yield f"data: {tool_call_notice}\n\n"
+
+                    # Execute tool via ToolExecutionEngine
+                    exec_resp = await ToolExecutionEngine.execute_tool(
+                        tool_id=tool_name,
+                        arguments=tool_args,
+                        conversation_id=conversation_id,
+                        db=db,
+                    )
+
+                    if exec_resp.status == ExecutionStatus.AWAITING_APPROVAL:
+                        approval_notice = json.dumps({
+                            "type": "approval_required",
+                            "approval_id": exec_resp.approval_id,
+                            "tool": tool_name,
+                            "reason": exec_resp.error,
+                        })
+                        yield f"data: {approval_notice}\n\n"
+
+                        approval_text = (
+                            f"Action `{tool_name}` requires user approval before execution.\n\n"
+                            f"- **Tool**: `{tool_name}`\n"
+                            f"- **Reason**: {exec_resp.error or 'Action requires explicit human confirmation.'}\n"
+                            f"- **Status**: Awaiting Approval\n\n"
+                            f"Please approve or reject this request in the Approvals dashboard."
+                        )
+
+                        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                        assistant_msg = Message(
+                            id=str(uuid.uuid4()),
+                            conversation_id=conversation_id,
+                            role="assistant",
+                            content=approval_text,
+                            model=current_model,
+                            provider=p_type.value,
+                            tokens_prompt=approx_prompt_tokens,
+                            tokens_completion=len(approval_text) // 4,
+                            metadata_json=json.dumps({
+                                "approval_id": exec_resp.approval_id,
+                                "tool_name": tool_name,
+                                "status": "awaiting_approval",
+                                "latency_ms": latency_ms,
+                            }),
+                        )
+                        db.add(assistant_msg)
+                        await db.commit()
+                        await db.refresh(assistant_msg)
+
+                        done_payload = json.dumps({
+                            "type": "done",
+                            "message_id": assistant_msg.id,
+                            "content": approval_text,
+                            "approval_id": exec_resp.approval_id,
+                            "model": current_model,
+                            "provider": p_type.value,
+                            "latency_ms": latency_ms,
+                        })
+                        yield f"data: {done_payload}\n\n"
+                        streaming_succeeded = True
+                        break
+
+                    else:
+                        # Tool executed (succeeded or failed)
+                        tool_res_notice = json.dumps({
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "success": exec_resp.success,
+                            "result": exec_resp.result,
+                            "error": exec_resp.error,
+                        })
+                        yield f"data: {tool_res_notice}\n\n"
+                        yield f"data: {json.dumps({'type': 'reset_buffer'})}\n\n"
+
+                        # Round 2: Feed tool output to model to generate the natural-language response
+                        tool_out_data = exec_resp.result if exec_resp.success else {"error": exec_resp.error}
+                        round2_msgs = list(chat_messages)
+                        round2_msgs.append(ChatMessage(role=ChatMessageRole.ASSISTANT, content=assembled_content))
+                        round2_msgs.append(ChatMessage(
+                            role=ChatMessageRole.USER,
+                            content=f"Tool Execution Result for `{tool_name}`:\n<tool_output tool=\"{tool_name}\">\n{json.dumps(tool_out_data)}\n</tool_output>\nPlease explain the result clearly and directly to the user."
+                        ))
+
+                        r2_req = ChatCompletionRequest(
+                            messages=round2_msgs,
+                            model=current_model,
+                            system_prompt=sys_prompt,
+                            stream=True,
+                        )
+
+                        r2_content: List[str] = []
+                        try:
+                            r2_stream = provider_adapter.chat_stream(r2_req)
+                            async for r2_chunk in r2_stream:
+                                if r2_chunk.delta:
+                                    r2_content.append(r2_chunk.delta)
+                                    yield f"data: {json.dumps({'type': 'token', 'delta': r2_chunk.delta})}\n\n"
+                        except Exception as r2_err:
+                            logger.warning(f"Round 2 explanation stream failed: {r2_err}")
+
+                        assembled_content = "".join(r2_content) or f"Executed `{tool_name}`: {json.dumps(tool_out_data)}"
+
                 # Stream succeeded!
                 streaming_succeeded = True
                 latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-                assembled_content = "".join(full_content)
                 approx_completion_tokens = max(1, len(assembled_content) // 4)
                 estimated_cost = CentralModelRegistry.estimate_cost(
                     current_model, approx_prompt_tokens, approx_completion_tokens
@@ -389,6 +545,9 @@ class ConversationService:
                     "pricing_category": pricing_cat,
                     "fallback_used": is_fallback_attempt,
                 }
+                if tool_call:
+                    metadata_dict["tool_executed"] = tool_call[0]
+
                 assistant_msg = Message(
                     id=str(uuid.uuid4()),
                     conversation_id=conversation_id,

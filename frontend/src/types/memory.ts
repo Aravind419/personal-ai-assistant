@@ -2,10 +2,16 @@ export interface MemoryItem {
   id: string;
   content: string;
   category: string;
+  subcategory?: string | null;
   importance: number;
   confidence: number;
   source_conversation_id?: string | null;
   source_message_id?: string | null;
+  temporal_scope?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  is_current?: boolean;
+  original_statement?: string | null;
   last_accessed_at?: string | null;
   expires_at?: string | null;
   is_archived: boolean;
@@ -40,8 +46,14 @@ export interface MemoryStats {
 export interface MemoryCreatePayload {
   content: string;
   category?: string;
+  subcategory?: string | null;
   importance?: number;
   confidence?: number;
+  temporal_scope?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  is_current?: boolean;
+  original_statement?: string | null;
   source_conversation_id?: string | null;
   source_message_id?: string | null;
   metadata?: Record<string, any> | null;
@@ -50,8 +62,14 @@ export interface MemoryCreatePayload {
 export interface MemoryUpdatePayload {
   content?: string;
   category?: string;
+  subcategory?: string | null;
   importance?: number;
   confidence?: number;
+  temporal_scope?: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  is_current?: boolean;
+  original_statement?: string | null;
   is_archived?: boolean;
   metadata?: Record<string, any> | null;
 }

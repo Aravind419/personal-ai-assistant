@@ -18,6 +18,14 @@ export interface TaskItem {
   duration_ms?: number | null;
   created_at: string;
   updated_at: string;
+
+  // Extended telemetry & source inspectability
+  source_conversation_id?: string | null;
+  source_conversation_title?: string | null;
+  source_message_id?: string | null;
+  execution_mode?: 'celery_worker' | 'local_async' | string | null;
+  worker_id?: string | null;
+  queue_wait_ms?: number | null;
 }
 
 export interface TaskListResponse {
@@ -34,4 +42,30 @@ export interface TaskStats {
   succeeded: number;
   failed: number;
   cancelled: number;
+  oldest_queued_wait_seconds?: number | null;
+  average_wait_seconds?: number | null;
+  stale_queued_count?: number;
+}
+
+export interface WorkerHealth {
+  redis_connected: boolean;
+  redis_latency_ms?: number | null;
+  celery_online: boolean;
+  worker_count: number;
+  active_workers: string[];
+  registered_task_types: string[];
+  active_tasks_count: number;
+  reserved_tasks_count: number;
+  last_heartbeat?: string | null;
+  last_successful_task?: {
+    id: string;
+    task_name: string;
+    completed_at: string;
+  } | null;
+}
+
+export interface SweepStaleTasksResponse {
+  swept_count: number;
+  task_ids: string[];
+  message: string;
 }

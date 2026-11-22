@@ -29,10 +29,16 @@ def _to_memory_response(memory: Memory) -> MemoryResponse:
         id=memory.id,
         content=memory.content,
         category=memory.category,
+        subcategory=getattr(memory, "subcategory", None),
         importance=memory.importance,
         confidence=memory.confidence,
         source_conversation_id=memory.source_conversation_id,
         source_message_id=memory.source_message_id,
+        temporal_scope=getattr(memory, "temporal_scope", "permanent") or "permanent",
+        valid_from=getattr(memory, "valid_from", None),
+        valid_until=getattr(memory, "valid_until", None),
+        is_current=getattr(memory, "is_current", True) if getattr(memory, "is_current", None) is not None else True,
+        original_statement=getattr(memory, "original_statement", None),
         last_accessed_at=memory.last_accessed_at,
         expires_at=memory.expires_at,
         is_archived=memory.is_archived,
@@ -60,11 +66,17 @@ class MemoryService:
         memory = Memory(
             content=data.content.strip(),
             category=data.category.strip().lower(),
+            subcategory=data.subcategory.strip().lower() if data.subcategory else None,
             embedding=embedding,
             importance=data.importance,
             confidence=data.confidence,
             source_conversation_id=data.source_conversation_id,
             source_message_id=data.source_message_id,
+            temporal_scope=data.temporal_scope or "permanent",
+            valid_from=data.valid_from,
+            valid_until=data.valid_until,
+            is_current=data.is_current,
+            original_statement=data.original_statement,
             embedding_model=provider.model_name,
             embedding_dim=len(embedding),
             metadata_json=meta_json,
@@ -99,12 +111,24 @@ class MemoryService:
 
         if data.category is not None:
             memory.category = data.category.strip().lower()
+        if data.subcategory is not None:
+            memory.subcategory = data.subcategory.strip().lower() if data.subcategory else None
         if data.importance is not None:
             memory.importance = data.importance
         if data.confidence is not None:
             memory.confidence = data.confidence
+        if data.temporal_scope is not None:
+            memory.temporal_scope = data.temporal_scope
+        if data.valid_from is not None:
+            memory.valid_from = data.valid_from
+        if data.valid_until is not None:
+            memory.valid_until = data.valid_until
+        if data.is_current is not None:
+            memory.is_current = data.is_current
         if data.is_archived is not None:
             memory.is_archived = data.is_archived
+        if data.original_statement is not None:
+            memory.original_statement = data.original_statement
         if data.metadata is not None:
             memory.metadata_json = json.dumps(data.metadata)
 

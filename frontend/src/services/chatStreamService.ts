@@ -8,6 +8,7 @@ export interface StreamDoneResult {
   pricing_category?: string;
   latency_ms?: number;
   fallback_used?: boolean;
+  approval_id?: string;
 }
 
 export interface StreamCallbacks {
@@ -15,7 +16,12 @@ export interface StreamCallbacks {
   onDone: (result: StreamDoneResult) => void;
   onError: (error: string) => void;
   onNotice?: (notice: string) => void;
+  onToolCall?: (call: { tool: string; arguments: any }) => void;
+  onToolResult?: (result: { tool: string; success: boolean; result?: any; error?: string }) => void;
+  onApprovalRequired?: (approval: { approval_id: string; tool: string; reason: string }) => void;
+  onResetBuffer?: () => void;
 }
+
 
 /**
  * Consumes Server-Sent Events (SSE) streaming chat completions from the FastAPI backend.
@@ -92,6 +98,23 @@ export async function streamChatMessage(
             callbacks.onToken(payload.delta);
           } else if (payload.type === 'notice' && typeof payload.message === 'string') {
             callbacks.onNotice?.(payload.message);
+          } else if (payload.type === 'tool_call') {
+            callbacks.onToolCall?.({ tool: payload.tool, arguments: payload.arguments });
+          } else if (payload.type === 'tool_result') {
+            callbacks.onToolResult?.({
+              tool: payload.tool,
+              success: payload.success,
+              result: payload.result,
+              error: payload.error,
+            });
+          } else if (payload.type === 'approval_required') {
+            callbacks.onApprovalRequired?.({
+              approval_id: payload.approval_id,
+              tool: payload.tool,
+              reason: payload.reason,
+            });
+          } else if (payload.type === 'reset_buffer') {
+            callbacks.onResetBuffer?.();
           } else if (payload.type === 'error') {
             callbacks.onError(payload.error || payload.message || 'Streaming error');
           } else if (payload.type === 'done') {
@@ -103,8 +126,10 @@ export async function streamChatMessage(
               pricing_category: payload.pricing_category,
               latency_ms: payload.latency_ms,
               fallback_used: payload.fallback_used,
+              approval_id: payload.approval_id,
             });
           }
+
         } catch {
           // Ignore incomplete JSON chunks in transit
         }

@@ -62,7 +62,7 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     iconName: 'Wrench',
     description: 'Native execution tools, MCP servers, and local environment bridges.',
     phasePlanned: 'Phase 3',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'integrations',
@@ -86,16 +86,17 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     iconName: 'ShieldCheck',
     description: 'Human-in-the-loop permission gateway for sensitive actions and external writes.',
     phasePlanned: 'Phase 3',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'activity_logs',
     label: 'Activity Logs',
     iconName: 'ScrollText',
     description: 'Structured audit trail of agent executions, tool calls, and system events.',
-    phasePlanned: 'Phase 1',
-    isImplementedInPhase0: false,
+    phasePlanned: 'Phase 3',
+    isImplementedInPhase0: true,
   },
+
   {
     id: 'settings',
     label: 'Settings',

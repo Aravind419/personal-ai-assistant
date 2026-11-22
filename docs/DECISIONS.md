@@ -191,3 +191,36 @@ This document records key technical and architectural decisions, the context in 
   - Production-ready background queue architecture.
   - Total resilience: background tasks always execute and persist state in `background_tasks`.
   - Zero crashes or lost tasks when Redis is temporarily offline.
+
+---
+
+## ADR-016: Provider-Independent Tool Execution & Human-in-the-Loop Approvals Engine
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Personal agents require tool interaction (calculators, system time, text transforms, file reading/writing, and external MCP servers). Letting an LLM execute arbitrary shell commands or write/delete files without human approval introduces critical security and data-loss risks. Furthermore, vendor-specific tool implementations couple the agent to proprietary function-calling formats.
+- **Decision**:
+  Implement a centralized, provider-independent Tool Execution Engine (`ToolExecutionEngine`) with JSON Schema validation (`jsonschema`), human-in-the-loop approval management (`ApprovalManager`), and Model Context Protocol (`McpServerManager`) integration. Native tools, external APIs, and MCP tools register into a single unified `ToolRegistry`.
+- **Consequences**:
+  - Provider neutrality: tools are decoupled from model vendors and work seamlessly across OpenRouter, Ollama, and NVIDIA adapters.
+  - Sandboxed execution: tools run on the backend under strict path traversal protection without arbitrary host privileges.
+  - Multi-round execution loop: tool results feed back into conversational context safely isolated within `<tool_output>` tags.
+
+---
+
+## ADR-017: Three-Tier Permission Classification & Tamper-Resistant Argument Hashing
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Tools vary widely in risk profile. Reading server time or evaluating math is safe, while writing files is sensitive, and deleting files or altering settings is critical. Furthermore, if a human approves an action with arguments `X`, an attacker or model turn could attempt to modify the arguments to `Y` while reusing the previous approval ID.
+- **Decision**:
+  Classify all actions into three permission tiers:
+  - **Level 1 (Safe)**: Automatic execution when permissions allow (e.g. `get_system_time`, `calculate`, `text_processor`, `file_reader`, `json_validator`).
+  - **Level 2 (Sensitive)**: Explicit human-in-the-loop approval required by default (e.g. `file_writer`).
+  - **Level 3 (Critical)**: Explicit action-specific confirmation required with destructive warnings (e.g. `file_deleter`).
+  Every approval calculates a canonical SHA-256 hash of sorted arguments (`arguments_hash`). If arguments change after approval, the approval is invalidated immediately, and race-safe atomic state transitions (`UPDATE ... WHERE status='pending'`) prevent double execution.
+- **Consequences**:
+  - Guarantees zero unconfirmed writes or deletes.
+  - Prevents argument tampering and approval reuse attacks.
+  - Comprehensive audit trail persisted in `tool_approvals` and `tool_executions`.
+

@@ -5,6 +5,7 @@ from app.models.conversation import Conversation, Message
 from app.models.model_policy import AIModelPolicy, ModelExecutionMetric
 from app.models.memory import Memory
 from app.models.task import BackgroundTask
+from app.models.tool import ToolApproval, ToolExecution, McpServerConfiguration
 
 __all__ = [
     "Base",
@@ -17,4 +18,7 @@ __all__ = [
     "ModelExecutionMetric",
     "Memory",
     "BackgroundTask",
+    "ToolApproval",
+    "ToolExecution",
+    "McpServerConfiguration",
 ]

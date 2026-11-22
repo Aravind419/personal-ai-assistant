@@ -18,6 +18,7 @@ class Memory(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     content: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="general", index=True)
+    subcategory: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     
     # Vector embedding column matching configured dimension (default 384)
     embedding = mapped_column(Vector(settings.EMBEDDING_DIMENSION), nullable=True)
@@ -40,8 +41,15 @@ class Memory(Base, TimestampMixin):
     
     last_accessed_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # Temporal & Current Status
+    temporal_scope: Mapped[str] = mapped_column(String(32), default="permanent", nullable=False, index=True)
+    valid_from: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     
+    original_statement: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     embedding_model: Mapped[str] = mapped_column(String(128), default=settings.DEFAULT_EMBEDDING_MODEL, nullable=False)
     embedding_dim: Mapped[int] = mapped_column(Integer, default=settings.EMBEDDING_DIMENSION, nullable=False)
     metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -78,6 +78,21 @@ docker compose down -v
    ```powershell
    .\.venv\Scripts\pytest
    ```
+   Acceptance criteria: 100% passing tests (all 90 core tests across health, config, exceptions, security, conversations, chat stream, tools, memory intelligence, voice, and Phase 3 tool execution & approvals).
+
+---
+
+### Step 4: Tool Execution & Approvals Testing
+
+To verify the Phase 3 Tool Execution & Approval system specifically:
+```powershell
+cd backend
+.\.venv\Scripts\pytest tests/test_phase3_tools_and_approvals.py -v
+```
+
+To test path-traversal sandboxing:
+- Files are confined to `workspace_storage/` in project root.
+- The `FileReaderTool`, `FileWriterTool`, and `FileDeleterTool` enforce strict relative path resolution against this directory and block access to parent paths or sensitive file names (`.env`, `id_rsa`, `.git`).
 
 4. Start the backend development server:
    ```powershell

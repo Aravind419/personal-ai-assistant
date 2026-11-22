@@ -6,6 +6,215 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.0] - 2026-11-22 - Phase 3: Tool Execution & Human-in-the-Loop Approvals
+
+### Added
+- **Centralized Tool Execution Engine**:
+  - Implemented `ToolExecutionEngine` (`backend/app/tools/engine.py`) orchestrating schema validation, permission checks, approval gating, per-tool timeouts (`asyncio.wait_for`), result normalization, and execution audit logging.
+  - Implemented `ToolRegistry` and extended `BaseTool` (`backend/app/tools/base.py`) supporting tool indexing, enabling/disabling, permission classifications, and LLM JSON schemas.
+- **Three-Tier Permission Architecture**:
+  - Implemented `ToolPermissionEngine` (`backend/app/tools/permissions.py`) classifying actions into Level 1 (Safe - auto-execute), Level 2 (Sensitive - user approval required), and Level 3 (Critical - explicit confirmation required).
+- **Human-in-the-Loop Approval Manager (`ApprovalManager`)**:
+  - Implemented `ApprovalManager` (`backend/app/tools/approval_manager.py`) providing atomic, race-safe transitions (`pending` -> `approved` / `rejected` / `cancelled`).
+  - Cryptographic argument tamper-resistance using canonical SHA-256 argument hashing (`CanonicalArgumentHasher` in `validator.py`).
+  - Approval expiration handling and auto-invalidation upon argument tampering.
+- **Model Context Protocol (MCP) Integration**:
+  - Implemented `McpClient` and `McpServerManager` (`backend/app/tools/mcp.py`) supporting stdio / HTTP JSON-RPC MCP servers, tool discovery, schema registration, and server health tracking.
+  - Implemented `PromptInjectionGuard` isolating tool outputs in `<tool_output>` blocks and sanitizing adversarial injection tokens (`<system>`, `ignore previous instructions`).
+- **Native Built-in Sandboxed Tools**:
+  - Registered 8 native tools in `backend/app/tools/builtin.py`: `get_system_time`, `calculate`, `text_processor`, `json_validator`, `file_reader`, `file_searcher`, `file_writer` (Sensitive), and `file_deleter` (Critical).
+  - Path-traversal sandbox protection: all file tools resolve paths strictly against `WORKSPACE_STORAGE_DIR`, rejecting directory escapes (`..`) and blocking sensitive files (`.env`, `id_rsa`).
+- **Database Schema Migration**:
+  - Alembic migration `006_tool_execution_and_approvals.py` creating `tool_approvals`, `tool_executions`, and `mcp_servers` tables.
+- **REST APIs**:
+  - Added `/api/v1/tools` endpoints (catalog listing, tool detail, direct execution, execution history, MCP server management).
+  - Added `/api/v1/approvals` endpoints (listing with status filtering, approval details, approve, reject, cancel).
+- **Conversational Multi-Round Tool Calling**:
+  - Updated `stream_chat` in `backend/app/conversations/service.py` to support tool calling in chat SSE streams, live approval card triggering, buffer reset, and multi-round explanation synthesis (up to 5 rounds).
+- **Frontend Dashboards & In-Chat Approvals**:
+  - `ApprovalsView.tsx`: Approvals dashboard with metrics cards, status tabs (All, Pending, Approved, Rejected, Expired, Cancelled), argument modal, and confirmation dialogs.
+  - `ToolsView.tsx`: Tools hub with registered catalog, JSON schema inspector, test execution runner, and MCP server configuration manager.
+  - `ActivityLogsView.tsx`: Execution audit log with status badges, timestamps, durations, and details modal.
+  - `ChatMessage.tsx`: In-chat interactive Approval Card with direct Approve & Execute and Reject actions.
+- **Automated Test Suite**:
+  - Added `backend/tests/test_phase3_tools_and_approvals.py` with 19 automated tests covering registration, schema validation, canonical hashing, secret redaction, safe execution, sensitive approval creation, atomic transitions, argument tamper invalidation, expiration, path-traversal sandbox defense, prompt injection defense, and REST APIs.
+  - Total test suite expanded to **90 passing tests** (100% pass rate).
+
+---
+
+## [0.4.6] - 2026-11-22 - Advanced Conversational Intelligence, System Prompt & Assistant Harness
+
+### Added
+- **Centralized Context Management Service (`ContextBuilder`)**:
+  - Implemented `ContextBuilder` (`backend/app/conversations/context_builder.py`) unifying prompt construction, untrusted background context delimitation, behavioral guardrails, and sliding-window token budgeting into a single dedicated service.
+  - Replaced scattered string concatenations with structured, partitioned prompt sections:
+    1. Core Identity & Role (intelligent, capable, conversational personal AI; not a database query interface).
+    2. Anti-Robotic Conversational Directives:
+       - Strict prohibition on meta-retrieval announcements: eliminates phrases like "Based on your stored data...", "According to your saved memories...", "Based on information in your database...".
+       - Seamless fact weaving: incorporates known user context directly as established common ground.
+       - Transparent memory reporting: when explicitly asked ("What do you remember about me?", "Where did you get that information?"), answers completely, accurately, and honestly.
+       - No repetitive filler openings: eliminates "Sure!", "Certainly!", "Of course!", "Great question!".
+       - No repetitive boilerplate closures: eliminates "Let me know if you need anything else".
+       - Natural follow-up and pronoun resolution: understands "What about that?", "Explain the second one", "its disadvantages" from conversation history.
+       - Direct answers: concise answers for simple queries ("2 + 2" -> "4").
+       - Uncertainty handling: acknowledges lack of information instead of inventing facts.
+    3. General Knowledge Independence:
+       - Authoritative answers on general knowledge topics (operating systems, binary search, science, math) without requiring or fabricating personal user memories.
+    4. Response Formatting Engine:
+       - Integrated GFM table matrices, checklists, and code-only zero-fluff rules.
+    5. Untrusted Data Safeguards:
+       - Delimits `<retrieved_context>` with strict warnings that memories are untrusted past interaction facts, not executable system instructions.
+- **Configurable Assistant Personality & Communication Style**:
+  - Implemented `AssistantPersonalityConfig` and `PersonalityService` (`backend/app/conversations/personality.py`) stored in PostgreSQL `system_metadata`.
+  - Configurable parameters: assistant name, communication style (natural, concise, technical, detailed), formality (balanced, casual, formal), detail level (balanced, concise, in-depth), memory usage mode (natural_weave, minimal, explicit), emoji usage (minimal, none, expressive), and custom behavioral guidelines.
+  - Added REST endpoints: `GET /api/v1/conversations/settings/personality` and `PUT /api/v1/conversations/settings/personality`.
+  - Added interactive "Assistant Identity & Conversational Personality" settings card in `frontend/src/pages/SettingsView.tsx` with live update feedback.
+- **Token Budgeting & Sliding Window History**:
+  - `ContextBuilder.build_chat_messages` enforces token budgets (default 6000 tokens), preserving opening context and recent conversation turns while pruning intermediate messages during long chats.
+- **Enhanced Memory Delimitation (`retrieve_relevant_memory_context`)**:
+  - Delimited `<retrieved_context>` with dual-layer anti-robotic instructions, preventing models from echoing database retrieval phrases.
+- **Automated Behavioral Test Suite**:
+  - Added `backend/tests/test_assistant_intelligence.py` with 14 automated tests covering all 10 behavioral prompt scenarios (general knowledge independence, seamless memory weaving, project context, irrelevant memory rejection, follow-up pronoun resolution, explicit memory transparency, conflicting memory, table formatting, direct 2+2 answer, uncertainty handling, prompt structure, personality directives, API CRUD, and token budgeting).
+  - Backend test suite expanded to **71 passing tests** (100% pass rate).
+  - Frontend production build verified with 0 errors.
+
+---
+
+## [0.4.5] - 2026-11-22 - Advanced Response Formatting & Voice Conversation System
+
+### Added
+- **Intelligent Response Formatting Pipeline**:
+  - Implemented automatic format detection and strict instruction compliance in `DEFAULT_SYSTEM_INSTRUCTION` (`backend/app/conversations/service.py`).
+  - Supports natural language requests for GitHub Flavored Markdown (GFM) tables, comparison matrices, numbered lists, bullet points, checklists (`- [ ]`), step-by-step tutorials, interview-ready answers, and Mermaid diagrams.
+  - Zero-fluff rule: when user asks for "only JSON" or "only code", conversational preamble and postamble commentary are strictly avoided.
+  - Responsive GFM Table rendering in React: styled table headers, zebra striping, subtle borders, `overflow-x-auto` horizontal scrolling container, and resilient rendering during SSE streaming without flicker.
+- **Message Action Bar**:
+  - Added Copy Message text with temporary green checkmark feedback.
+  - Added Copy Code block button on code snippets.
+  - Added Read Aloud / Play Audio toggle with pulsing active speaker animation.
+  - Added Stop Audio control.
+  - Added Regenerate Response button triggering prompt resubmission.
+- **Complete Voice Input System (Speech-to-Text)**:
+  - Added microphone button to `ChatInput` with interactive recording state UI.
+  - Live recording duration counter (`00:05`), pulsing red indicator, Cancel button, and Done/Finish button.
+  - Records audio via browser `MediaRecorder` API into `audio/webm` and uploads to `POST /api/v1/voice/transcribe`.
+  - Populates transcribed text directly into the chat input textarea for user review and editing before sending.
+  - Graceful handling of browser microphone permission denial and unsupported browser APIs.
+- **Complete Voice Output System (Text-to-Speech)**:
+  - Play / Read Aloud button on completed assistant responses.
+  - Client-side zero-cost speech synthesis using Web Speech API (`window.speechSynthesis`).
+  - Implemented `VoiceService.clean_markdown_for_speech` (`backend/app/voice/service.py`) converting markdown tables into natural spoken sentences, skipping code blocks gracefully, converting checklists, and stripping markdown syntax.
+  - Added backend route `POST /api/v1/voice/clean-for-speech` with robust testing.
+  - Added Voice Settings modal: toggle voice enabled/disabled, auto-play response toggle, voice selector dropdown, and speed slider (0.5x to 2.0x).
+  - Preference persistence in PostgreSQL `system_metadata` table via `GET` / `PUT` `/api/v1/voice/preferences`.
+- **Automated Verification**:
+  - Added `backend/tests/test_voice.py` covering table speech cleaning, code block speech cleaning, JSON speech cleaning, checklists, audio upload validation, and voice preferences CRUD.
+  - Total automated backend tests increased to **57 passing tests** (100% pass rate).
+  - Clean TypeScript compilation and Vite production build (0 errors).
+
+---
+
+## [0.4.4] - 2026-11-22 - Phase 2 ChatGPT-Style Intelligent Personal Memory System
+
+### Added
+- **Intelligent Structured Memory Schema & Database Migration**:
+  - Added Alembic migration `005_intelligent_memory_attributes.py` (`005_intelligent_memory_attrs`) introducing 6 new fields:
+    - `subcategory` (varchar 64) for granular ontology tags (`current_location`, `friend`, `degree`, `technical_decision`).
+    - `temporal_scope` (varchar 32) tracking temporal validity (`current`, `permanent`, `temporary`, `previous`).
+    - `valid_from` & `valid_until` (timestamptz) for chronological lifecycle auditing.
+    - `is_current` (boolean, indexed) allowing instant filtering of active current facts versus superseded historical records.
+    - `original_statement` (text) recording raw verbatim user utterances for auditability and verification.
+  - Added indexes on `subcategory`, `temporal_scope`, and `is_current`.
+  - Updated `Memory` model, Pydantic schemas, and `MemoryRepository` with full support for temporal scope and current state filters.
+- **Location Intelligence & Seamless Relocation Transitions**:
+  - Differentiates current temporary location ("I am in Kasiriganapalli") from permanent residence ("I live in Kasiriganapalli") and hometown ("My hometown is Kasiriganapalli").
+  - Seamless location transition: when a relocation event occurs ("Actually I moved to Bangalore"), existing current location records are automatically marked `temporal_scope = "previous"`, `is_current = False`, and archived with transition audit history (`metadata_json.history`), while the new location is recorded as `temporal_scope = "current"`, `is_current = True`.
+- **Multi-Fact Clause Segmentation in Natural Language**:
+  - Implemented `split_into_clauses` resolving compound sentences with shared subjects (e.g., "I am studying B.Tech IT and building a Flutter app" cleanly extracts both the educational degree and active project independently).
+  - Robust handling of academic degrees and abbreviations containing periods (e.g. `B.Tech`, `M.Sc`).
+- **Dual Extraction Strategy (LLM Provider + Heuristic Fallback)**:
+  - Implemented `extract_via_llm` querying the active configured LLM provider for structured JSON memory candidate extraction when online.
+  - Graceful, zero-crash fallback to the comprehensive heuristic extractor when offline, unconfigured, or when credentials are unavailable, populating `extraction_strategy: "llm" | "heuristic"` in the execution trace.
+- **Enhanced Spatial & Query Semantic Retrieval**:
+  - Updated `LocalSemanticEmbeddingProvider` with domain semantic anchor projections for location and temporal terms.
+  - Natural spatial queries ("Where am I currently?", "Which place did I mention?", "Where is the user?") achieve high cosine similarity (>0.35) and reliably retrieve location records.
+- **Memory Explorer UI Transparency**:
+  - Updated `frontend/src/types/memory.ts` and `frontend/src/pages/MemoryView.tsx` with badges for `subcategory`, `temporal_scope` (emerald for current, amber for previous), `is_current`, and verbatim `original_statement`.
+
+### Fixed
+- **Relationship Correction & Targeting**:
+  - Fixed relationship correction pattern matching (`Actually, my friend's name is Saranya, not Sarguna`) so the targeted friend's previous record is superseded in-place with history auditing rather than creating duplicate entries.
+- **Question Rejection Filter**:
+  - Ensured informational queries (e.g., "What is a python decorator?") are strictly rejected from becoming personal memories with clear rejection rationale recorded in trace telemetry.
+
+---
+
+## [0.4.3] - 2026-11-22 - Phase 2 Semantic Memory Extraction & Personal Fact Recognition Overhaul
+
+### Fixed
+- **Root Cause of Personal Fact Rejection ("my friend name is sarguna")**:
+  - Identified that `extract_heuristic_candidates` was strictly restricted to 5 narrow patterns (`preferences`, `profile`, `projects`, `goals`, `technical_knowledge`), completely lacking extractors for relationships, personal facts, education, career goals, decisions, and casual grammar (such as omitting possessive `'s`).
+  - Added comprehensive grammar-tolerant heuristic extractors for 12 categories: `personal_facts`, `relationships`, `education`, `career_goals`, `technical_skills`, `preferences`, `projects`, `important_events`, `decisions`, `ongoing_activities`, `communication_preferences`, and `relevant_context`.
+  - Normalizes statements idiomatically into third-person factual assertions (e.g. "my friend name is sarguna" -> "The user's friend is named Sarguna.", "my brother studies mechanical engineering" -> "The user's brother studies mechanical engineering.").
+- **Relationship Entity Disambiguation**:
+  - Fixed relationship deduplication logic in `reconcile_and_store_memory_with_detail`: verified that distinct people sharing the same relationship (e.g., friend Sarguna vs friend Rahul) are preserved as separate active memories and not overwritten.
+  - Added support for relationship enrichment (e.g., "Sarguna is my college friend" enriches "The user's friend is named Sarguna" into "The user's friend Sarguna is a college friend").
+  - Added support for explicit corrections (e.g., "Actually, my friend's name is Saranya, not Sarguna" supersedes the target memory and records the previous fact in `metadata_json.history`).
+- **Semantic Retrieval Precision**:
+  - Enhanced `LocalSemanticEmbeddingProvider` stem normalizations (`named` -> `name`, `studies` -> `study`, etc.) and sign-balanced character n-grams.
+  - Adjusted default `MEMORY_SIMILARITY_THRESHOLD` to `0.20`, allowing natural queries ("Who is Sarguna?", "What is my friend's name?", "Do you remember my friend?") to reliably retrieve relevant memories.
+- **Question & Hypothetical Rejection**:
+  - Added pre-filtering to prevent saving questions ("What is the capital of France?", "What is the weather today?"), commands ("Explain Python loops"), and hypothetical scenarios ("If I had a friend named Bob...").
+
+---
+
+## [0.4.2] - 2026-11-22 - Phase 2 Background Worker Investigation, Task Monitoring & Memory Extraction Transparency Overhaul
+
+### Fixed
+- **Root Cause of Queued Tasks**:
+  - Identified that Redis broker container was healthy and receiving tasks via `.delay()`, but no Celery worker was running in the environment to consume them.
+  - Resolved `TaskService._dispatch_to_worker` limitation where local async fallback was only triggered if Redis connection threw an exception. Added `is_celery_worker_online()` inspect ping: when Celery workers are offline, tasks automatically execute via high-performance in-process `_execute_local_fallback` instead of lingering in `queued`.
+  - Fixed `celery_task_id` persistence by awaiting asynchronous assignment instead of fire-and-forget task loops.
+  - Swept and drained all 24+ accumulated legacy queued tasks through local async execution (post-sweep: 60 succeeded, 0 queued).
+- **Failed Task Investigation**:
+  - Confirmed the failed tasks were generated exclusively by pytest tests (`test_task_error_sanitization`) testing multi-line traceback stripping. Verified no unhandled production failures exist.
+  - Enhanced error handling with sanitized clean summary messages, retry tracking (0/3), and exponential backoff configuration.
+
+### Added
+- **Full Memory Extraction Pipeline Transparency**:
+  - Implemented `extract_and_reconcile_memories_with_trace` (`backend/app/memory/extraction.py`) recording all 9 pipeline stages:
+    1. Source conversation identified
+    2. Relevant messages collected
+    3. Candidate memories extracted
+    4. Sensitive information filtering performed
+    5. Candidate embedding generated
+    6. Vector similarity search conducted
+    7. Semantic duplicate check evaluated
+    8. Candidate merged, created, or superseded
+    9. Result saved to database
+  - Captured structured extraction categories: `created_memories`, `updated_memories` (with `previous_content` and `action: superseded`), `duplicate_memories` (with similarity score), `filtered_candidates` (with redaction reason), and `rejected_candidates`.
+- **Extended Background Task Schema & Telemetry**:
+  - Added fields to `BackgroundTaskResponse`: `source_conversation_id`, `source_conversation_title`, `source_message_id`, `execution_mode`, `worker_id`, `queue_wait_ms`.
+  - Added `WorkerHealthResponse` schema and `GET /api/v1/tasks/health` endpoint returning real Redis latency, worker ping, registered tasks, active and reserved task counts.
+  - Added `POST /api/v1/tasks/sweep-stale` endpoint allowing manual or automated sweeping of tasks queued longer than a specified duration.
+  - Added `TaskStatsResponse` metrics: `oldest_queued_wait_seconds`, `average_wait_seconds`, `stale_queued_count`.
+- **Task Search, Filter, and Sort**:
+  - Enhanced `list_tasks` and `GET /api/v1/tasks` with `search` query parameter, `sort_by` (`created_desc`, `created_asc`, `duration_desc`, `duration_asc`), and task type filtering.
+- **Frontend Slide-Over Task Details Drawer & Transparency UI**:
+  - Created `TaskDetailsModal` (`frontend/src/components/tasks/TaskDetailsModal.tsx`) with three specialized inspector tabs:
+    - *Overview & Source*: lifecycle timing, queue wait time, execution runtime (`Celery Worker` vs `Local Async Fallback`), worker ID, source conversation & message context with automated credential redaction badge.
+    - *Memory Extraction*: visual 9-stage pipeline checklist, metric cards, and structured cards for created, superseded, duplicate, and filtered memory candidates.
+    - *Input & Raw Results*: formatted JSON inspection with copy-to-clipboard.
+  - Overhauled `TasksView` (`frontend/src/pages/TasksView.tsx`):
+    - Live **Worker System Health** panel showing Redis broker connection latency, Celery worker online status, and active execution strategy.
+    - **Queue Latency** panel with oldest wait time, average wait time, and stale (>5m) count.
+    - "Process Stale Tasks" trigger button when unconsumed jobs are detected.
+    - Instant search, type filtering, and sorting dropdown.
+- **Worker Execution Script**:
+  - Added `start_worker.ps1` for starting a local Celery worker on Windows with `--pool=solo`.
+
+---
+
 ## [0.4.1] - 2026-11-22 - Bugfix: Model Streaming, DNS Resilience, Active Models & Credential Display
 
 ### Fixed

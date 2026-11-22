@@ -19,13 +19,19 @@ The project follows a rigorous phased engineering methodology. Each phase contai
                                            |
                                            v
 +-----------------------------------------------------------------------------------------+
-| Phase 2: Semantic Memory & Background Workers (NOT_STARTED)                             |
+| Phase 2: Semantic Memory & Background Workers (VERIFIED)                                |
 | - pgvector schema + memory extraction + Redis & Celery task worker + Tasks dashboard    |
 +-----------------------------------------------------------------------------------------+
                                            |
                                            v
 +-----------------------------------------------------------------------------------------+
-| Phase 3: Tool Execution & Human-in-the-Loop Approvals (NOT_STARTED)                     |
+| Formatting & Conversational Intelligence Harness (VERIFIED)                             |
+| - GFM tables + Voice STT/TTS + ContextBuilder + Anti-robotic rules + Personality engine |
++-----------------------------------------------------------------------------------------+
+                                           |
+                                           v
++-----------------------------------------------------------------------------------------+
+| Phase 3: Tool Execution & Human-in-the-Loop Approvals (VERIFIED)                        |
 | - Dynamic tool registry + MCP bridge + Approval workflow engine + Skills UI             |
 +-----------------------------------------------------------------------------------------+
                                            |
@@ -105,15 +111,64 @@ The project follows a rigorous phased engineering methodology. Each phase contai
   - [x] Redis and Celery worker infrastructure operational with graceful offline fallback.
   - [x] Background task lifecycle, retries, and cancellation fully functional.
   - [x] Memory Explorer and Tasks Dashboard display real PostgreSQL data.
-  - [x] All 39 backend tests pass; clean frontend production build with 0 errors.
+  - [x] All 71 backend tests pass; clean frontend production build with 0 errors.
   - [x] End-to-end browser workflows verified via Playwright MCP.
 
 ---
 
-### Phase 3: Tool Execution & Human-in-the-Loop Approvals
-- **Status**: `NOT_STARTED`
-- **Dependencies**: Phase 2 (NOT_STARTED)
+### Pre-Phase 3 Upgrades: Formatting, Voice & Conversational Intelligence Harness
+- **Status**: `VERIFIED`
+- **Dependencies**: Phase 2 (VERIFIED)
 - **Key Deliverables**:
-  - **Tool Registry Expansion**: Broaden registry for executing local tools with strict argument validation.
-  - **MCP Bridge**: Model Context Protocol client for connecting external MCP servers.
-  - **Human-in-the-Loop Approval Engine**: Gatekeeper system requiring explicit user confirmation before executing potentially destructive or sensitive actions.
+  - **GFM Table & Response Formatting**: Auto-formatting for tables, comparisons, checklists, code-only, and Mermaid diagrams with responsive React renderers.
+  - **Voice Input (STT) & Voice Output (TTS)**: Microphone audio recording with timer UI, `/voice/transcribe`, and zero-cost Web Speech API with backend speech text cleaning.
+  - **Centralized Context Builder**: `ContextBuilder` service assembling structured system prompts, enforcing anti-robotic rules ("Based on stored data" eliminated), and managing sliding-window token budgets.
+  - **Configurable Assistant Personality**: `AssistantPersonalityConfig` and `PersonalityService` with settings UI for communication style, formality, detail level, and memory integration modes.
+  - **Behavioral Test Suite**: 14 dedicated tests in `test_assistant_intelligence.py` covering all 10 behavioral scenarios.
+
+---
+
+### Phase 3: Tool Execution & Human-in-the-Loop Approvals
+- **Status**: `VERIFIED`
+- **Dependencies**: Phase 2 (VERIFIED)
+- **Key Deliverables**:
+  - **Centralized Tool Execution Engine**: Provider-independent `ToolExecutionEngine`, `ToolRegistry`, and `BaseTool` supporting native tools, external APIs, and MCP servers.
+  - **Three-Tier Permission Architecture**:
+    - *Level 1 (Safe)*: Auto-executes under configured permissions (`get_system_time`, `calculate`, `text_processor`, `json_validator`, `file_searcher`).
+    - *Level 2 (Sensitive)*: Explicit user approval required by default (`file_writer`).
+    - *Level 3 (Critical)*: Explicit action-specific confirmation required (`file_deleter`).
+  - **Human-in-the-Loop Approval Manager (`ApprovalManager`)**:
+    - Atomic, race-safe state transitions (`pending` -> `approved` / `rejected` / `cancelled`).
+    - Expiration management and canonical SHA-256 argument hashing (`arguments_hash`) preventing parameter tampering between approval and execution.
+  - **MCP Integration Layer (`McpClient`, `McpServerManager`)**:
+    - Tool discovery from stdio / HTTP JSON-RPC MCP servers, schema normalization, connection health tracking, and `PromptInjectionGuard` output isolation.
+  - **Native Built-in Sandboxed Tools**:
+    - 8 core tools registered: clock, math calculator, text processor, JSON validator, path-traversal protected file reader/searcher/writer/deleter in `workspace_storage/`.
+  - **Conversational Multi-Round Execution**:
+    - Streaming SSE chat with tool call detection, multi-round execution (max 5 rounds), buffer reset, and round-2 LLM synthesis.
+  - **Full Frontend Tooling & Approvals Dashboards**:
+    - `ApprovalsView.tsx` (metrics, filter tabs, details modal, confirmation dialogs).
+    - `ToolsView.tsx` (tool catalog, JSON schema viewer, test runner, execution history logs, MCP server manager).
+    - `ActivityLogsView.tsx` (execution audit log).
+    - Interactive in-chat Approval Cards in `ChatMessage.tsx`.
+- **Acceptance Criteria**:
+  - [x] Provider-independent tool execution engine operational with input schema validation.
+  - [x] Three-tier permission architecture actively enforces Safe, Sensitive, and Critical boundaries.
+  - [x] Atomic state transitions prevent race conditions and duplicate executions on approval.
+  - [x] SHA-256 canonical argument hashing guarantees tamper resistance.
+  - [x] MCP tools discoverable and invokable with prompt injection defenses.
+  - [x] Native tools sandbox isolated with path-traversal protection.
+  - [x] Multi-round conversational tool execution loops with safety limits.
+  - [x] Approvals, Tools, and Activity Logs UI functional with real PostgreSQL tables.
+  - [x] All 90 backend tests pass (100%); frontend production build compiles with 0 errors.
+
+---
+
+### Phase 4: Proactive Background Automations & External Integrations
+- **Status**: `NOT_STARTED`
+- **Dependencies**: Phase 3 (VERIFIED)
+- **Key Deliverables**:
+  - **Scheduled Automations Engine**: Cron and interval-based recurring job scheduler with Celery Beat.
+  - **Proactive Notification & Alert System**: Background trigger alerts delivering proactive insights to user.
+  - **Third-Party OAuth Connectors**: Secure credential flows for Google Workspace (Docs, Gmail, Calendar) and GitHub.
+  - **System Audit & Compliance Exporter**: Comprehensive security logs and data export tools.

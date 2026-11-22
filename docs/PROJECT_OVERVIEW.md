@@ -18,10 +18,12 @@ The **Personal AI Assistant** is an autonomous, production-grade AI system desig
 | **Diagnostic Foundation** | Production-ready FastAPI + React shell with health and DB latency probes | Phase 0 (VERIFIED) |
 | **Conversational Agent Engine** | Streaming chat interface with persistent conversations and provider abstraction | Phase 1 (VERIFIED) |
 | **Multi-Model & Cost Controls** | Central model registry, Free-Only mode, automated fallback chains, and telemetry | Phase 1 (VERIFIED) |
-| **Semantic Long-Term Memory** | Automatic memory extraction and vector search via PostgreSQL `pgvector` | Phase 2 (Next - NOT_STARTED) |
-| **Background Task Workers** | Asynchronous task scheduling and proactive routines powered by Redis and Celery | Phase 2 (Next - NOT_STARTED) |
-| **Tool & Skill Registry Expansion** | Extensible tool ecosystem with parameter validation and MCP server bridging | Phase 3 (NOT_STARTED) |
-| **Human-in-the-Loop Approvals** | Granular approval workflow before executing destructive or high-impact actions | Phase 3 (NOT_STARTED) |
+| **Semantic Long-Term Memory** | Automatic memory extraction, temporal validity, and vector search via PostgreSQL `pgvector` | Phase 2 (VERIFIED) |
+| **Background Task Workers** | Asynchronous task scheduling and proactive routines powered by Redis and Celery | Phase 2 (VERIFIED) |
+| **Formatting & Voice Conversation** | Responsive GFM tables, voice input (STT), voice output (TTS), clean speech preprocessor | Pre-Phase 3 (VERIFIED) |
+| **Conversational Intelligence & Harness** | Anti-robotic context builder, natural memory weaving, personality configuration | Pre-Phase 3 (VERIFIED) |
+| **Tool & Skill Registry Expansion** | Extensible tool ecosystem with parameter validation, MCP server bridging, and sandboxing | Phase 3 (VERIFIED) |
+| **Human-in-the-Loop Approvals** | Three-tier approval workflow with cryptographic argument hashing and race-safe execution | Phase 3 (VERIFIED) |
 | **Third-Party Integrations** | OAuth and webhook connectors for calendars, email, and cloud services | Phase 4 (NOT_STARTED) |
 
 ---

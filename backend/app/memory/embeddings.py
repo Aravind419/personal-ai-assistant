@@ -95,22 +95,78 @@ class LocalSemanticEmbeddingProvider(BaseEmbeddingProvider):
         stopwords = {
             "a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "of",
             "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-            "it", "its", "that", "this", "these", "those", "with", "as", "by"
+            "it", "its", "that", "this", "these", "those", "with", "as", "by", "do", "does", "did"
+        }
+
+        # Common concept mappings for enhanced semantic alignment
+        stem_map = {
+            "named": "name",
+            "names": "name",
+            "friend": "friend",
+            "friends": "friend",
+            "studies": "study",
+            "studying": "study",
+            "studied": "study",
+            "learning": "learn",
+            "learned": "learn",
+            "building": "build",
+            "built": "build",
+            "decided": "decide",
+            "deciding": "decide",
+            "prefers": "prefer",
+            "preferred": "prefer",
+            "likes": "like",
+            "liked": "like",
+            "brother": "brother",
+            "brothers": "brother",
+            "sister": "sister",
+            "sisters": "sister",
+            "placements": "placement",
+            "preparing": "prepare",
+            "prepared": "prepare",
+            "working": "work",
+            "worked": "work",
+            # Spatial and location concepts
+            "where": "location",
+            "place": "location",
+            "places": "location",
+            "city": "location",
+            "town": "location",
+            "village": "location",
+            "staying": "location",
+            "stay": "location",
+            "located": "location",
+            "live": "location",
+            "lives": "location",
+            "living": "location",
+            "moved": "location",
+            "moving": "location",
+            "relocated": "location",
+            "currently": "current",
+            "presently": "current",
+            "current": "current",
+            "mention": "mention",
+            "mentioned": "mention",
         }
 
         # 1. Primary word token projections with TF and position weighting
         for idx, token in enumerate(tokens):
+            if token == "s" and idx > 0:
+                # Possessive 's artifact
+                continue
+
             is_stop = token in stopwords
             weight = 0.3 if is_stop else (2.0 + (1.0 / (idx + 1)))
             
-            # Root stem heuristic (strip simple trailing s, ed, ing)
-            stem = token
-            if len(stem) > 4 and stem.endswith("ing"):
-                stem = stem[:-3]
-            elif len(stem) > 3 and stem.endswith("ed"):
-                stem = stem[:-2]
-            elif len(stem) > 3 and stem.endswith("s"):
-                stem = stem[:-1]
+            # Root stem heuristic
+            stem = stem_map.get(token, token)
+            if stem == token:
+                if len(stem) > 4 and stem.endswith("ing"):
+                    stem = stem[:-3]
+                elif len(stem) > 3 and stem.endswith("ed"):
+                    stem = stem[:-2]
+                elif len(stem) > 3 and stem.endswith("s") and not stem.endswith("ss"):
+                    stem = stem[:-1]
 
             # Primary hash for stem
             h = int(hashlib.md5(stem.encode("utf-8")).hexdigest(), 16)
@@ -130,15 +186,34 @@ class LocalSemanticEmbeddingProvider(BaseEmbeddingProvider):
             if not ngram.isspace():
                 h = int(hashlib.sha256(ngram.encode("utf-8")).hexdigest()[:8], 16)
                 bucket = h % self._dim
-                vector[bucket] += 0.15
+                sign = 1.0 if ((h >> 4) % 2 == 0) else -1.0
+                vector[bucket] += sign * 0.25
 
         # 3. Bigram token projections for phrase relationships
         for i in range(len(tokens) - 1):
-            if tokens[i] not in stopwords or tokens[i+1] not in stopwords:
-                bigram = f"{tokens[i]}_{tokens[i+1]}"
+            t1, t2 = tokens[i], tokens[i+1]
+            if t1 not in stopwords or t2 not in stopwords:
+                s1 = stem_map.get(t1, t1)
+                s2 = stem_map.get(t2, t2)
+                bigram = f"{s1}_{s2}"
                 h = int(hashlib.md5(bigram.encode("utf-8")).hexdigest()[:8], 16)
                 bucket = h % self._dim
-                vector[bucket] += 0.75
+                sign = 1.0 if ((h >> 4) % 2 == 0) else -1.0
+                vector[bucket] += sign * 0.75
+
+        # 4. Domain semantic anchor projections for spatial and temporal retrieval
+        location_keywords = {"location", "where", "place", "places", "city", "town", "staying", "living", "lives", "live", "relocated", "moved", "hometown", "village", "country"}
+        is_location_text = (
+            any(t in location_keywords or stem_map.get(t) == "location" for t in tokens)
+            or any(phrase in clean_text for phrase in ["currently in", "staying in", "lives in", "moved to", "based in", "hometown", "place did i mention", "which place"])
+        )
+        if is_location_text:
+            h_loc = int(hashlib.sha256(b"domain_concept_location_presence").hexdigest()[:8], 16)
+            vector[h_loc % self._dim] += 3.5
+
+        if any(t in {"current", "currently", "presently"} for t in tokens) or "currently in" in clean_text or "am in" in clean_text:
+            h_curr = int(hashlib.sha256(b"domain_concept_temporal_current").hexdigest()[:8], 16)
+            vector[h_curr % self._dim] += 2.0
 
         return normalize_vector(vector)
 

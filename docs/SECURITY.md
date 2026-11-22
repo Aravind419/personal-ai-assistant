@@ -92,3 +92,38 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
    - Background tasks stored in `background_tasks.error_message` are sanitized to strip multiline internal stack traces or environment variables before being returned to API clients.
 4. **Deleted Memory Vector Invalidation**:
    - Deleting a memory permanently removes both the tabular record and its vector embedding from PostgreSQL, guaranteeing that deleted facts can never resurface in future vector searches.
+5. **Context Builder & Personality Configuration Boundary**:
+   - User-level personality configurations (communication style, formality, custom guidelines) execute within bounded validation schemas (`AssistantPersonalityConfig`) and are strictly partitioned within `ContextBuilder`.
+   - User personality preferences can never override core developer instructions, system safety policies, tool sandboxes, or Free-Only operational mode constraints.
+
+---
+
+## 8. Tool Execution & Human-in-the-Loop Approval Security (Phase 3)
+
+1. **Three-Tier Permission Architecture**:
+   - Every tool is classified into `SAFE` (Level 1), `SENSITIVE` (Level 2), or `CRITICAL` (Level 3).
+   - `SAFE` tools (read-only, mathematical calculations, local system time) execute automatically under configured permissions.
+   - `SENSITIVE` tools (modifying files, state mutations) strictly block execution and require explicit user approval.
+   - `CRITICAL` tools (file deletion, financial, irreversible destructive actions) require explicit action-specific confirmation with risk disclosure.
+
+2. **Race-Safe State Transitions & Idempotency**:
+   - `ApprovalManager` performs atomic SQL status updates (`UPDATE tool_approvals SET status = :status WHERE id = :id AND status = 'pending'`).
+   - Prevents race conditions, double approvals, or duplicate execution triggers from rapid repeated clicks or concurrent API calls.
+
+3. **Canonical Argument Hashing (`arguments_hash`)**:
+   - Every approval request is cryptographically bound to a SHA-256 hash of canonical sorted JSON arguments (`CanonicalArgumentHasher`).
+   - If requested arguments drift or are altered between approval creation and execution time, the approval is immediately invalidated and execution is blocked.
+
+4. **Sandbox File Traversal Protection**:
+   - File system tools (`file_reader`, `file_searcher`, `file_writer`, `file_deleter`) are strictly restricted to `WORKSPACE_STORAGE_DIR`.
+   - Paths are resolved to their canonical realpaths. Any path attempting traversal outside the sandbox (e.g. `../`, absolute paths, symlinks) raises a `SecurityException`.
+   - Access to sensitive filenames (`.env`, `id_rsa`, `id_ed25519`, `.git`, `credentials`) is explicitly blocked.
+
+5. **Secret Sanitization in Execution Logs**:
+   - `SecretSanitizer` scans execution arguments, outputs, and error details before persistence.
+   - Redacts API keys (`sk-...`, `Bearer ...`), passwords, database URLs, and secret tokens using regular expression masks (`[REDACTED]`).
+
+6. **Prompt Injection Defense for External Tools & MCP**:
+   - Tool outputs and MCP results are enclosed in isolated `<tool_output>` XML wrappers.
+   - Sanitizes and neutralizes prompt injection patterns (such as `<system>`, `ignore previous instructions`, `disregard above rules`) before passing output back into the conversation context.
+   - Untrusted MCP server tools can never modify system prompts or agent guardrails.

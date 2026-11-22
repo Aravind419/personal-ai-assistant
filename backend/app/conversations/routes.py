@@ -12,6 +12,7 @@ from app.conversations.schemas import (
     SendMessageRequest,
     MessageResponse,
 )
+from app.conversations.personality import AssistantPersonalityConfig, PersonalityService
 from app.conversations.service import ConversationService
 
 router = APIRouter(prefix="/conversations", tags=["Conversations & Chat"])
@@ -103,3 +104,26 @@ async def send_message_and_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get(
+    "/settings/personality",
+    response_model=AssistantPersonalityConfig,
+    summary="Get current assistant personality and communication style settings",
+)
+async def get_personality(
+    db: AsyncSession = Depends(get_db),
+):
+    return await PersonalityService.get_personality(db)
+
+
+@router.put(
+    "/settings/personality",
+    response_model=AssistantPersonalityConfig,
+    summary="Update assistant personality and communication style settings",
+)
+async def update_personality(
+    payload: AssistantPersonalityConfig,
+    db: AsyncSession = Depends(get_db),
+):
+    return await PersonalityService.update_personality(payload, db)
