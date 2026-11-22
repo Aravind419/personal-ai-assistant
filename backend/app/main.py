@@ -84,6 +84,12 @@ def create_application() -> FastAPI:
             "health": f"{settings.API_V1_STR}/health",
         }
 
+    # Root health probe alias
+    @application.get("/health", tags=["Root"])
+    async def root_health():
+        from app.services.health_service import HealthService
+        return await HealthService.get_health_status()
+
     # Mount API routers
     application.include_router(api_router, prefix=settings.API_V1_STR)
 

@@ -57,6 +57,8 @@ coverage.xml
 # IDEs & Editors
 .vscode/
 .idea/
+.serena/
+.playwright-mcp/
 *.swp
 *.swo
 *~

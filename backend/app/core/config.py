@@ -18,6 +18,19 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "change-this-insecure-key-for-local-development-only-min-32-chars"
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def assemble_debug(cls, v: Union[bool, str]) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            clean = v.strip().lower()
+            if clean in ("true", "1", "t", "yes", "y", "debug"):
+                return True
+            if clean in ("false", "0", "f", "no", "n", "release", "prod", "production"):
+                return False
+        return bool(v)
+
     # Server Configuration
     BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8000
