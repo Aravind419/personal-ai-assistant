@@ -21,12 +21,12 @@ class AIModelPolicy(Base, TimestampMixin):
     selected_model: Mapped[str] = mapped_column(
         String(128),
         nullable=False,
-        default="meta-llama/llama-3.3-70b-instruct:free",
+        default="nvidia/nemotron-3.5-lightning:free",
     )
     fallback_models_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        default='["google/gemini-2.0-flash-exp:free", "deepseek/deepseek-chat:free", "qwen/qwen-2.5-coder-32b-instruct:free"]',
+        default='["openrouter/free", "google/gemma-4-31b-it:free"]',
     )
     enable_fallback: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     max_cost_per_request: Mapped[float] = mapped_column(Float, default=0.05, nullable=False)

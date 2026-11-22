@@ -40,7 +40,7 @@ class ConversationService:
         policy = await ModelService.get_or_create_policy(db)
 
         p_type = payload.provider_type or active_provider.provider_type.value
-        p_model = payload.model or policy.selected_model or active_provider.default_model or "meta-llama/llama-3.3-70b-instruct:free"
+        p_model = payload.model or policy.selected_model or active_provider.default_model or "nvidia/nemotron-3.5-lightning:free"
 
         # Enforce free-only mode on creation
         if policy.model_mode == ModelMode.FREE_ONLY:

@@ -98,7 +98,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     try {
       setError(null);
       setFallbackNotice(null);
-      const defaultModel = modelPolicy?.selected_model || 'meta-llama/llama-3.3-70b-instruct:free';
+      const defaultModel = modelPolicy?.selected_model || 'nvidia/nemotron-3.5-lightning:free';
 
       const newConv = await conversationService.createConversation({
         title: 'New Conversation',
@@ -168,7 +168,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
 
     if (!currentConvId) {
       try {
-        const defaultModel = modelPolicy?.selected_model || 'meta-llama/llama-3.3-70b-instruct:free';
+        const defaultModel = modelPolicy?.selected_model || 'nvidia/nemotron-3.5-lightning:free';
         const newConv = await conversationService.createConversation({
           title: content.slice(0, 30),
           model: defaultModel,
@@ -313,7 +313,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const freeModels = models.filter((m) => m.pricing_category === 'free');
   const paidModels = models.filter((m) => m.pricing_category === 'paid');
 
-  const currentModelId = activeConversation?.model || modelPolicy?.selected_model || 'meta-llama/llama-3.3-70b-instruct:free';
+  const currentModelId = activeConversation?.model || modelPolicy?.selected_model || 'nvidia/nemotron-3.5-lightning:free';
   const currentModelMeta = models.find((m) => m.id === currentModelId);
 
   return (

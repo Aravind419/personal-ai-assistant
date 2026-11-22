@@ -12,10 +12,63 @@ from app.providers.schemas import (
 # Central curated models catalog
 # Built-in free models are prioritized for zero-cost development
 CENTRAL_MODELS_CATALOG: Dict[str, CentralModelInfo] = {
-    # --- FREE MODELS (Default for development) ---
+    # --- FREE MODELS (Default for zero-cost development) ---
+    "nvidia/nemotron-3.5-lightning:free": CentralModelInfo(
+        id="nvidia/nemotron-3.5-lightning:free",
+        name="NVIDIA: Nemotron 3.5 Lightning (Free)",
+        provider_type=ProviderType.OPENROUTER,
+        pricing_category=PricingCategory.FREE,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        context_limit=131072,
+        supported_capabilities=[
+            ModelCapability.CHAT.value,
+            ModelCapability.STREAMING.value,
+            ModelCapability.CODE.value,
+            ModelCapability.REASONING.value,
+        ],
+        is_available=True,
+        is_default=True,
+        description="High-throughput open reasoning model by NVIDIA with lightning-fast inference at zero cost.",
+    ),
+    "openrouter/free": CentralModelInfo(
+        id="openrouter/free",
+        name="OpenRouter: Free Models Router",
+        provider_type=ProviderType.OPENROUTER,
+        pricing_category=PricingCategory.FREE,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        context_limit=131072,
+        supported_capabilities=[
+            ModelCapability.CHAT.value,
+            ModelCapability.STREAMING.value,
+            ModelCapability.TOOLS.value,
+            ModelCapability.REASONING.value,
+        ],
+        is_available=True,
+        is_default=False,
+        description="Official OpenRouter dynamic router that automatically routes to high-availability free models at zero cost.",
+    ),
+    "google/gemma-4-31b-it:free": CentralModelInfo(
+        id="google/gemma-4-31b-it:free",
+        name="Google: Gemma 4 31B (Free)",
+        provider_type=ProviderType.OPENROUTER,
+        pricing_category=PricingCategory.FREE,
+        cost_per_million_input=0.0,
+        cost_per_million_output=0.0,
+        context_limit=32768,
+        supported_capabilities=[
+            ModelCapability.CHAT.value,
+            ModelCapability.STREAMING.value,
+            ModelCapability.CODE.value,
+        ],
+        is_available=True,
+        is_default=False,
+        description="Google's open-weights 31B instruction-tuned model at zero cost.",
+    ),
     "meta-llama/llama-3.3-70b-instruct:free": CentralModelInfo(
         id="meta-llama/llama-3.3-70b-instruct:free",
-        name="Meta: Llama 3.3 70B Instruct (Free)",
+        name="Meta: Llama 3.3 70B Instruct (Free - Retired)",
         provider_type=ProviderType.OPENROUTER,
         pricing_category=PricingCategory.FREE,
         cost_per_million_input=0.0,
@@ -26,9 +79,9 @@ CENTRAL_MODELS_CATALOG: Dict[str, CentralModelInfo] = {
             ModelCapability.STREAMING.value,
             ModelCapability.TOOLS.value,
         ],
-        is_available=True,
-        is_default=True,
-        description="State-of-the-art open weights 70B model with full tool calling and reasoning support at zero cost.",
+        is_available=False,
+        is_default=False,
+        description="State-of-the-art open weights 70B model with full tool calling and reasoning support (historical catalog).",
     ),
     "google/gemini-2.0-flash-exp:free": CentralModelInfo(
         id="google/gemini-2.0-flash-exp:free",
@@ -201,11 +254,12 @@ class CentralModelRegistry:
     def is_free_model(cls, model_id: str, pricing_dict: Optional[Dict[str, Any]] = None) -> bool:
         """
         Determines whether a model is free:
-        1. ID ends with :free or contains :free
+        1. ID ends with :free, contains :free, is 'openrouter/free', or ends with /free
         2. Pricing dict explicitly specifies prompt == 0 and completion == 0
         3. Registered in catalog as PricingCategory.FREE
         """
-        if ":free" in model_id.lower():
+        m_lower = model_id.lower()
+        if ":free" in m_lower or m_lower == "openrouter/free" or m_lower.endswith("/free"):
             return True
 
         if pricing_dict:
@@ -279,9 +333,7 @@ class CentralModelRegistry:
         Returns the appropriate default model ID based on mode.
         Guarantees a free model when mode is free_only.
         """
-        if mode == ModelMode.FREE_ONLY:
-            return "meta-llama/llama-3.3-70b-instruct:free"
-        return "meta-llama/llama-3.3-70b-instruct:free"
+        return "nvidia/nemotron-3.5-lightning:free"
 
     @classmethod
     def validate_model_for_mode(cls, model_id: str, mode: ModelMode) -> Tuple[bool, Optional[str]]:

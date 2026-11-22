@@ -19,10 +19,18 @@ from app.core.exceptions import BadRequestException
 from app.core.logging import logger
 
 DEFAULT_FALLBACK_CHAIN = [
+    "openrouter/free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "google/gemma-4-31b-it:free",
+]
+
+RETIRED_FREE_SLUGS = {
+    "meta-llama/llama-3.3-70b-instruct:free",
     "google/gemini-2.0-flash-exp:free",
     "deepseek/deepseek-chat:free",
+    "deepseek/deepseek-r1:free",
     "qwen/qwen-2.5-coder-32b-instruct:free",
-]
+}
 
 
 class ModelService:
@@ -30,6 +38,7 @@ class ModelService:
     async def get_or_create_policy(db: AsyncSession) -> ModelPolicyResponse:
         """
         Retrieves the active model policy or initializes the default free-only policy.
+        Automatically updates legacy retired model slugs to active free models.
         """
         stmt = select(AIModelPolicy)
         result = await db.execute(stmt)
@@ -39,7 +48,7 @@ class ModelService:
             policy = AIModelPolicy(
                 id=str(uuid.uuid4()),
                 model_mode=ModelMode.FREE_ONLY.value,
-                selected_model="meta-llama/llama-3.3-70b-instruct:free",
+                selected_model="nvidia/nemotron-3.5-lightning:free",
                 fallback_models_json=json.dumps(DEFAULT_FALLBACK_CHAIN),
                 enable_fallback=True,
                 max_cost_per_request=0.05,
@@ -48,6 +57,28 @@ class ModelService:
             db.add(policy)
             await db.commit()
             await db.refresh(policy)
+        else:
+            # Auto-migrate retired free models in existing database rows
+            updated = False
+            if policy.selected_model in RETIRED_FREE_SLUGS:
+                policy.selected_model = "nvidia/nemotron-3.5-lightning:free"
+                updated = True
+            try:
+                current_fallbacks = json.loads(policy.fallback_models_json)
+                if any(s in RETIRED_FREE_SLUGS for s in current_fallbacks):
+                    cleaned = [s for s in current_fallbacks if s not in RETIRED_FREE_SLUGS]
+                    for s in DEFAULT_FALLBACK_CHAIN:
+                        if s not in cleaned:
+                            cleaned.append(s)
+                    policy.fallback_models_json = json.dumps(cleaned)
+                    updated = True
+            except Exception:
+                policy.fallback_models_json = json.dumps(DEFAULT_FALLBACK_CHAIN)
+                updated = True
+
+            if updated:
+                await db.commit()
+                await db.refresh(policy)
 
         try:
             fallbacks = json.loads(policy.fallback_models_json)

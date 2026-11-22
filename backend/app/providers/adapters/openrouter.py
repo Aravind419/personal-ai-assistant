@@ -1,5 +1,7 @@
 import time
 import json
+import socket
+import asyncio
 from typing import AsyncIterator, List, Optional
 import httpx
 
@@ -15,33 +17,27 @@ from app.providers.schemas import (
 from app.core.logging import logger
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free"
 
 # Fallback curated models for OpenRouter in case of offline/local diagnostics
 CURATED_OPENROUTER_MODELS = [
     ModelInfo(
-        id="meta-llama/llama-3.3-70b-instruct:free",
-        name="Meta: Llama 3.3 70B Instruct (Free)",
+        id="nvidia/nemotron-3.5-lightning:free",
+        name="NVIDIA: Nemotron 3.5 Lightning (Free)",
         context_length=131072,
-        description="State-of-the-art open weights model from Meta with zero cost.",
+        description="High-throughput reasoning model by NVIDIA with lightning-fast inference at zero cost.",
     ),
     ModelInfo(
-        id="google/gemini-2.0-flash-exp:free",
-        name="Google: Gemini 2.0 Flash (Free)",
-        context_length=1048576,
-        description="High-speed multimodal next-generation reasoning model at zero cost.",
+        id="openrouter/free",
+        name="OpenRouter: Free Models Router",
+        context_length=131072,
+        description="Official OpenRouter dynamic router that automatically selects available free models at zero cost.",
     ),
     ModelInfo(
-        id="deepseek/deepseek-r1:free",
-        name="DeepSeek: R1 Reasoning (Free)",
-        context_length=65536,
-        description="Chain-of-thought mathematical and logic reasoning model.",
-    ),
-    ModelInfo(
-        id="deepseek/deepseek-chat:free",
-        name="DeepSeek: V3 Chat (Free)",
-        context_length=65536,
-        description="High-performance general dialogue and coding model.",
+        id="google/gemma-4-31b-it:free",
+        name="Google: Gemma 4 31B (Free)",
+        context_length=32768,
+        description="Google's open-weights 31B instruction-tuned model at zero cost.",
     ),
     ModelInfo(
         id="openai/gpt-4o-mini",
@@ -122,74 +118,111 @@ class OpenRouterProvider(BaseLLMProvider):
         start_time = time.perf_counter()
         url = f"{self.base_url}/auth/key"
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, headers=self._get_headers())
-                latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        max_retries = 2
+        last_exc: Optional[Exception] = None
 
-                if response.status_code == 200:
-                    data = response.json()
-                    limit_info = data.get("data", {}).get("label") or "Authorized"
-                    return ProviderTestResult(
-                        success=True,
-                        latency_ms=latency_ms,
-                        message=f"Connection successful: {limit_info}",
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(url, headers=self._get_headers())
+                    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        limit_info = data.get("data", {}).get("label") or "Authorized"
+                        return ProviderTestResult(
+                            success=True,
+                            latency_ms=latency_ms,
+                            message=f"Connection successful: {limit_info}",
+                        )
+                    elif response.status_code == 401:
+                        return ProviderTestResult(
+                            success=False,
+                            latency_ms=latency_ms,
+                            message="Authentication failed. Invalid OpenRouter API key.",
+                            error="401 Unauthorized",
+                        )
+                    else:
+                        return ProviderTestResult(
+                            success=False,
+                            latency_ms=latency_ms,
+                            message=f"OpenRouter returned status {response.status_code}.",
+                            error=response.text,
+                        )
+            except (httpx.ConnectError, httpx.NetworkError, socket.gaierror) as net_err:
+                last_exc = net_err
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Transient connection glitch to OpenRouter test ({attempt + 1}/{max_retries + 1}): {net_err}. Retrying in 0.5s..."
                     )
-                elif response.status_code == 401:
-                    return ProviderTestResult(
-                        success=False,
-                        latency_ms=latency_ms,
-                        message="Authentication failed. Invalid OpenRouter API key.",
-                        error="401 Unauthorized",
-                    )
-                else:
-                    return ProviderTestResult(
-                        success=False,
-                        latency_ms=latency_ms,
-                        message=f"OpenRouter returned status {response.status_code}.",
-                        error=response.text,
-                    )
-        except Exception as exc:
-            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-            logger.warning(f"OpenRouter connection test failed: {exc}")
-            return ProviderTestResult(
-                success=False,
-                latency_ms=latency_ms,
-                message="Unable to reach OpenRouter API.",
-                error=str(exc),
+                    await asyncio.sleep(0.5)
+                    continue
+                break
+            except Exception as exc:
+                last_exc = exc
+                break
+
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        err_str = str(last_exc) if last_exc else "Unknown connection error"
+        logger.warning(f"OpenRouter connection test failed: {err_str}")
+        if "11001" in err_str or "getaddrinfo" in err_str.lower():
+            user_msg = (
+                "Unable to resolve openrouter.ai (DNS lookup failed: [Errno 11001]). "
+                "Please check your internet connection or DNS settings."
             )
+        else:
+            user_msg = f"Unable to reach OpenRouter API: {err_str}"
+
+        return ProviderTestResult(
+            success=False,
+            latency_ms=latency_ms,
+            message=user_msg,
+            error=err_str,
+        )
 
     async def list_models(self) -> List[ModelInfo]:
         from app.providers.model_registry import CentralModelRegistry
         from app.providers.schemas import PricingCategory
 
         url = f"{self.base_url}/models"
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, headers=self._get_headers())
-                if response.status_code == 200:
-                    data = response.json()
-                    raw_models = data.get("data", [])
-                    CentralModelRegistry.enrich_from_openrouter_catalog(raw_models)
-                    models = []
-                    for m in raw_models:
-                        model_id = m.get("id")
-                        if model_id:
-                            is_free = CentralModelRegistry.is_free_model(model_id, m.get("pricing"))
-                            models.append(
-                                ModelInfo(
-                                    id=model_id,
-                                    name=m.get("name", model_id),
-                                    context_length=m.get("context_length"),
-                                    description=m.get("description"),
-                                    pricing=m.get("pricing"),
-                                    pricing_category=PricingCategory.FREE if is_free else PricingCategory.PAID,
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(url, headers=self._get_headers())
+                    if response.status_code == 200:
+                        data = response.json()
+                        raw_models = data.get("data", [])
+                        CentralModelRegistry.enrich_from_openrouter_catalog(raw_models)
+                        models = []
+                        for m in raw_models:
+                            model_id = m.get("id")
+                            if model_id:
+                                is_free = CentralModelRegistry.is_free_model(model_id, m.get("pricing"))
+                                models.append(
+                                    ModelInfo(
+                                        id=model_id,
+                                        name=m.get("name", model_id),
+                                        context_length=m.get("context_length"),
+                                        description=m.get("description"),
+                                        pricing=m.get("pricing"),
+                                        pricing_category=PricingCategory.FREE if is_free else PricingCategory.PAID,
+                                    )
                                 )
-                            )
-                    if models:
-                        return models
-        except Exception as exc:
-            logger.warning(f"Error fetching dynamic models from OpenRouter: {exc}. Using curated list.")
+                        if models:
+                            return models
+                    break
+            except (httpx.ConnectError, httpx.NetworkError, socket.gaierror) as net_err:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Transient connection glitch fetching models ({attempt + 1}/{max_retries + 1}): {net_err}. Retrying..."
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+                logger.warning(f"Failed to fetch dynamic models from OpenRouter after retries: {net_err}. Using curated list.")
+            except Exception as exc:
+                logger.warning(f"Error fetching dynamic models from OpenRouter: {exc}. Using curated list.")
+                break
 
         return CURATED_OPENROUTER_MODELS
 
@@ -207,21 +240,39 @@ class OpenRouterProvider(BaseLLMProvider):
         if request.max_tokens:
             payload["max_tokens"] = request.max_tokens
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload, headers=self._get_headers())
-            if response.status_code != 200:
-                self._handle_http_error(response)
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(url, json=payload, headers=self._get_headers())
+                    if response.status_code != 200:
+                        self._handle_http_error(response)
 
-            data = response.json()
-            choice = data.get("choices", [{}])[0]
-            message_obj = choice.get("message", {})
-            return ChatCompletionResponse(
-                id=data.get("id", "res-unknown"),
-                model=data.get("model", request.model),
-                content=message_obj.get("content", ""),
-                finish_reason=choice.get("finish_reason"),
-                usage=data.get("usage"),
-            )
+                    data = response.json()
+                    choice = data.get("choices", [{}])[0]
+                    message_obj = choice.get("message", {})
+                    content = message_obj.get("content") or message_obj.get("reasoning") or ""
+                    return ChatCompletionResponse(
+                        id=data.get("id", "res-unknown"),
+                        model=data.get("model", request.model),
+                        content=content,
+                        finish_reason=choice.get("finish_reason"),
+                        usage=data.get("usage"),
+                    )
+            except (httpx.ConnectError, httpx.NetworkError, socket.gaierror) as net_err:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Transient connection glitch in chat_complete ({attempt + 1}/{max_retries + 1}): {net_err}. Retrying..."
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+                err_str = str(net_err)
+                if "11001" in err_str or "getaddrinfo" in err_str.lower():
+                    raise RuntimeError(
+                        "Unable to reach openrouter.ai (DNS lookup failed: [Errno 11001]). "
+                        "Please verify your internet connection and DNS settings."
+                    )
+                raise RuntimeError(f"Network connection error contacting OpenRouter: {err_str}")
 
     async def chat_stream(self, request: ChatCompletionRequest) -> AsyncIterator[ChatStreamChunk]:
         if not self.api_key:
@@ -241,41 +292,63 @@ class OpenRouterProvider(BaseLLMProvider):
         if request.max_tokens:
             payload["max_tokens"] = request.max_tokens
 
-        try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                async with client.stream("POST", url, json=payload, headers=self._get_headers()) as response:
-                    if response.status_code != 200:
-                        error_text = await response.aread()
-                        err_msg = self._format_error_message(response.status_code, error_text.decode("utf-8"))
-                        yield ChatStreamChunk(delta="", error=err_msg)
-                        return
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    async with client.stream("POST", url, json=payload, headers=self._get_headers()) as response:
+                        if response.status_code != 200:
+                            error_text = await response.aread()
+                            err_msg = self._format_error_message(response.status_code, error_text.decode("utf-8"))
+                            yield ChatStreamChunk(delta="", error=err_msg)
+                            return
 
-                    async for line in response.aiter_lines():
-                        if not line or not line.strip():
-                            continue
-                        line = line.strip()
-                        if line.startswith("data: "):
-                            data_str = line[6:].strip()
-                            if data_str == "[DONE]":
-                                yield ChatStreamChunk(delta="", finish_reason="stop")
-                                break
-                            try:
-                                chunk_json = json.loads(data_str)
-                                choice = chunk_json.get("choices", [{}])[0]
-                                delta_content = choice.get("delta", {}).get("content", "")
-                                finish_reason = choice.get("finish_reason")
-                                if delta_content or finish_reason:
-                                    yield ChatStreamChunk(
-                                        id=chunk_json.get("id"),
-                                        delta=delta_content or "",
-                                        finish_reason=finish_reason,
-                                    )
-                            except json.JSONDecodeError:
+                        async for line in response.aiter_lines():
+                            if not line or not line.strip():
                                 continue
-        except httpx.TimeoutException:
-            yield ChatStreamChunk(delta="", error="Request to OpenRouter timed out.")
-        except Exception as exc:
-            yield ChatStreamChunk(delta="", error=f"Streaming error: {str(exc)}")
+                            line = line.strip()
+                            if line.startswith("data: "):
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    yield ChatStreamChunk(delta="", finish_reason="stop")
+                                    break
+                                try:
+                                    chunk_json = json.loads(data_str)
+                                    choice = chunk_json.get("choices", [{}])[0]
+                                    delta_content = choice.get("delta", {}).get("content", "")
+                                    finish_reason = choice.get("finish_reason")
+                                    if delta_content or finish_reason:
+                                        yield ChatStreamChunk(
+                                            id=chunk_json.get("id"),
+                                            delta=delta_content or "",
+                                            finish_reason=finish_reason,
+                                        )
+                                except json.JSONDecodeError:
+                                    continue
+                return
+            except (httpx.ConnectError, httpx.NetworkError, socket.gaierror) as net_err:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Transient connection glitch in chat_stream ({attempt + 1}/{max_retries + 1}): {net_err}. Retrying in 0.5s..."
+                    )
+                    await asyncio.sleep(0.5)
+                    continue
+                err_str = str(net_err)
+                if "11001" in err_str or "getaddrinfo" in err_str.lower():
+                    friendly = (
+                        "Unable to reach openrouter.ai (DNS lookup failed: [Errno 11001]). "
+                        "Please verify your internet connection and DNS settings."
+                    )
+                else:
+                    friendly = f"Connection error reaching OpenRouter: {err_str}"
+                yield ChatStreamChunk(delta="", error=friendly)
+                return
+            except httpx.TimeoutException:
+                yield ChatStreamChunk(delta="", error="Request to OpenRouter timed out.")
+                return
+            except Exception as exc:
+                yield ChatStreamChunk(delta="", error=f"Streaming error: {str(exc)}")
+                return
 
     def _format_error_message(self, status_code: int, error_body: str) -> str:
         try:

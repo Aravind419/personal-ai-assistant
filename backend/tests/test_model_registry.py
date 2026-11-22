@@ -85,7 +85,11 @@ def test_cost_calculation():
 
 @pytest.mark.asyncio
 async def test_model_policy_api_endpoints(async_client: AsyncClient):
-    # 1. Get initial policy (should default to free_only)
+    # 1. Reset / initialize policy to free_only baseline
+    await async_client.put(
+        "/api/v1/models/policy",
+        json={"model_mode": "free_only"},
+    )
     get_res = await async_client.get("/api/v1/models/policy")
     assert get_res.status_code == 200
     policy = get_res.json()

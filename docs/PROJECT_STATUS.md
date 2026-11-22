@@ -6,9 +6,9 @@
 
 ## 1. Executive Summary
 
-- **Current Development Phase**: **Phase 2 (Semantic Memory & Background Workers) Complete — VERIFIED**
+- **Current Development Phase**: **Phase 2 (Semantic Memory & Background Workers) Complete + Streaming & Model Availability Hotfix [0.4.1] — VERIFIED**
 - **Next Development Phase**: **Phase 3 (Tool Execution & Human-in-the-Loop Approvals) — NOT_STARTED**
-- **Overall Progress**: Phase 0, Phase 1, the Multi-Model Architecture & Cost Controls, and Phase 2 are 100% complete and verified. The system supports persistent semantic memory via PostgreSQL `pgvector`, provider-independent embedding generation (`LocalSemanticEmbeddingProvider` and OpenRouter fallback), automatic memory extraction with deduplication, conflict detection, and historical superseding, isolated semantic retrieval injection, Redis and Celery background workers with local asynchronous fallback, task management APIs with sanitized error messages, and interactive **Memory** and **Tasks** dashboard views.
+- **Overall Progress**: Phase 0, Phase 1, Multi-Model Architecture & Cost Controls, and Phase 2 are 100% complete and verified. The system supports persistent semantic memory via PostgreSQL `pgvector`, provider-independent embedding generation (`LocalSemanticEmbeddingProvider` and OpenRouter fallback), automatic memory extraction with deduplication, conflict detection, and historical superseding, isolated semantic retrieval injection, Redis and Celery background workers with local asynchronous fallback, task management APIs with sanitized error messages, interactive **Memory** and **Tasks** dashboard views, resilient socket/DNS retry handling, updated live OpenRouter models (`nvidia/nemotron-3.5-lightning:free`, `openrouter/free`), and clear active API credential status displays.
 
 ---
 

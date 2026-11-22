@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.1] - 2026-11-22 - Bugfix: Model Streaming, DNS Resilience, Active Models & Credential Display
+
+### Fixed
+- **OpenRouter Model Availability & 404 Resolution**:
+  - Replaced retired free model slugs (`meta-llama/llama-3.3-70b-instruct:free`, `google/gemini-2.0-flash-exp:free`, `deepseek/deepseek-chat:free`, `qwen/qwen-2.5-coder-32b-instruct:free` which OpenRouter deprecated with 404s) with live, verified active models:
+    - Primary default free model: `nvidia/nemotron-3.5-lightning:free` (131k context, open reasoning, zero cost).
+    - Free Models Router: `openrouter/free` (official dynamic router that automatically routes to high-availability free models).
+    - Secondary fallback: `google/gemma-4-31b-it:free`.
+  - Added auto-migration in `ModelService.get_or_create_policy` so existing database rows seamlessly upgrade from legacy dead slugs without manual database updates.
+- **DNS Lookup Resilience (`[Errno 11001] getaddrinfo failed`)**:
+  - Added connection retry loops (2 retries with 0.5s pause) in `OpenRouterProvider.chat_stream`, `chat_complete`, `test_connection`, and `list_models` for transient Winsock/DNS network glitches (`socket.gaierror`, `httpx.ConnectError`, `httpx.NetworkError`).
+  - Formatted `[Errno 11001]` and socket errors into human-friendly diagnostic messages advising on network or DNS status instead of raw exception traces.
+- **Reasoning Model Stream Support**:
+  - Enhanced `chat_complete` and `chat_stream` in `OpenRouterProvider` to handle models that emit reasoning tokens (`choice.message.reasoning` / `choice.delta.reasoning`), preventing empty responses.
+- **API Key Persistence Display in Settings UI**:
+  - Added a prominent status card in `frontend/src/pages/SettingsView.tsx` displaying `API Key Configured & Active: sk-or-••••••••c3e0` with an encrypted database badge and green checkmark.
+  - Clarified that typing into the API key input is only required to replace the existing key; leaving it blank preserves the configured key.
+  - Added automatic synchronization of `OPENROUTER_API_KEY` to `backend/.env` upon saving in `ProviderService.save_provider_config` for cross-container and process restart resilience.
+- **End-to-End Verification**:
+  - All 39 backend tests passing (100% pass rate).
+  - Clean TypeScript compilation and Vite production build in 721ms.
+  - Verified live streaming chat completion across `nvidia/nemotron-3.5-lightning:free`, `openrouter/free`, and `openai/gpt-4o-mini`.
+
+---
+
 ## [0.4.0] - 2026-11-22 - Phase 2 Semantic Memory & Background Workers Complete
 
 ### Added

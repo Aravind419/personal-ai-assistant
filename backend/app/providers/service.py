@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -13,11 +15,12 @@ from app.providers.schemas import (
 )
 from app.providers.registry import ProviderRegistry
 from app.core.security import encrypt_secret, decrypt_secret, mask_secret
+from app.core.logging import logger
 
 DEFAULT_PROVIDER_METADATA = {
     ProviderType.OPENROUTER: {
         "name": "OpenRouter",
-        "default_model": "meta-llama/llama-3.3-70b-instruct:free",
+        "default_model": "nvidia/nemotron-3.5-lightning:free",
         "base_url": "https://openrouter.ai/api/v1",
     },
     ProviderType.NVIDIA: {
