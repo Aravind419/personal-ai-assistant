@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.0] - 2026-11-22 - Provider-Independent Multi-Model Architecture & Cost Controls
+
+### Added
+- **Central Model Registry & Multi-Model Architecture**:
+  - `CentralModelRegistry` (`backend/app/providers/model_registry.py`) providing discovery, classification, context limits, pricing category (`free` vs `paid`), and capability tags for 100+ models.
+  - Prioritized free models for zero-cost development: `meta-llama/llama-3.3-70b-instruct:free`, `google/gemini-2.0-flash-exp:free`, `deepseek/deepseek-r1:free`, `deepseek/deepseek-chat:free`, `qwen/qwen-2.5-coder-32b-instruct:free`, `mistralai/mistral-7b-instruct:free`.
+  - Commercial paid models (`openai/gpt-4o-mini`, `openai/gpt-4o`, `anthropic/claude-3.5-haiku`, `anthropic/claude-3.5-sonnet`) supported as optional capabilities.
+  - Endpoints under `/api/v1/models`: `GET /api/v1/models` (catalog listing with free/paid filters), `GET /api/v1/models/policy`, `PUT /api/v1/models/policy`, and `GET /api/v1/models/metrics`.
+- **Operational Modes & Strict Free-Only Guardrails**:
+  - Three distinct operational modes: `free_only` (default), `paid_enabled`, and `manual`.
+  - Strict enforcement: Under `free_only` mode, paid models are guaranteed never to be executed or selected during fallback; attempts are rejected or sanitized to free defaults.
+  - Per-request cost ceiling controls (`max_cost_per_request`).
+- **Configurable Fallback Chains**:
+  - Multi-candidate fallback execution loop in `stream_chat` (`backend/app/conversations/service.py`).
+  - Seamless fallback switching on rate limits (429) or provider errors with real-time SSE notice events delivered to client.
+  - Mode-based fallback filtering guaranteeing no paid models appear in fallback chain under `free_only` mode.
+- **Token Usage, Cost & Performance Telemetry**:
+  - `model_execution_metrics` table and Alembic migration `003_model_policy_and_metrics.py`.
+  - Detailed telemetry tracking: prompt tokens, completion tokens, total tokens, estimated cost in USD, and latency in milliseconds.
+  - Assistant message metadata persistence (`metadata_json`) storing cost, latency, and fallback indicators.
+- **Frontend Upgrades**:
+  - Enhanced **Settings View** (`frontend/src/pages/SettingsView.tsx`) with Operational Mode selector, Fallback Chain manager, Cost ceiling input, Token Usage & Analytics dashboard, and Central Model Registry explorer.
+  - Enhanced **Chat View** (`frontend/src/pages/ChatView.tsx`) with grouped model selector (Free vs Paid), mode pill indicator, fallback notice banner, and message execution telemetry badges (`ChatMessage.tsx`).
+  - New `modelService.ts` API client.
+- **Automated Tests**:
+  - Added 8 new automated tests in `backend/tests/test_model_registry.py` covering model classification, free-only validation, fallback filtering, cost calculation, policy endpoints, metrics, and streaming fallback execution (30 total tests passing).
+
+---
+
 ## [0.2.0] - 2026-11-22 - Phase 1 Basic AI Agent Complete
 
 ### Added

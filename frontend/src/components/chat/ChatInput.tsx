@@ -6,6 +6,7 @@ interface ChatInputProps {
   isStreaming: boolean;
   onStopGeneration?: () => void;
   disabled?: boolean;
+  placeholder?: string;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -13,6 +14,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   isStreaming,
   onStopGeneration,
   disabled = false,
+  placeholder = 'Ask anything (Shift+Enter for new line)...',
 }) => {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -54,7 +56,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             placeholder={
               disabled
                 ? 'Provider not configured. Please set up OpenRouter API key in Settings.'
-                : 'Ask anything, draft code, or brainstorm ideas... (Enter to send, Shift+Enter for newline)'
+                : placeholder
             }
             rows={1}
             className="flex-1 bg-transparent border-0 focus:ring-0 text-sm text-slate-100 placeholder-slate-500 resize-none py-1.5 px-2 outline-none max-h-44 disabled:opacity-50"

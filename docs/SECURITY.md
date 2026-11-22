@@ -48,7 +48,19 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
 
 ---
 
-## 5. Vulnerability Reporting & Dependency Audits
+## 5. Model Execution Guardrails & Financial Cost Protection
+
+1. **Strict Free-Only Mode**:
+   - When the user selects `free_only` mode, the backend enforces a hard barrier against commercial models. Any attempt to query paid models is rejected before API transmission, and fallback chains are sanitized to exclude all paid candidates.
+   - Prevents inadvertent cloud token expenditure during local development or testing.
+2. **Per-Request Cost Ceilings**:
+   - Under `paid_enabled` mode, requests exceeding `max_cost_per_request` are rejected before dispatch.
+3. **Transparent Execution Telemetry**:
+   - Token usage and estimated USD costs are tracked per request in `model_execution_metrics` for auditability.
+
+---
+
+## 6. Vulnerability Reporting & Dependency Audits
 
 - Periodically inspect and audit Python packages:
   ```powershell

@@ -113,14 +113,39 @@ This document records key technical and architectural decisions, the context in 
 
 ---
 
-## ADR-009: Server-Sent Events (SSE) for Real-Time Chat Streaming
+## ADR-010: Central Model Registry & Provider-Independent Multi-Model Selection
 - **Date**: 2026-11-22
 - **Status**: Accepted
 - **Context**:
-  Conversational AI demands low-latency, real-time token rendering. WebSockets require stateful connection negotiation and bi-directional framing overhead, whereas chat streaming is unidirectional from server to client.
+  Hardcoding models or tying model choices to hardcoded strings within agent logic prevents seamless model switching, causes unexpected billing charges, and obscures model capabilities (pricing, context window, tools).
 - **Decision**:
-  Use Server-Sent Events (`media_type="text/event-stream"`) with standard `ReadableStreamDefaultReader` on the React frontend and `StreamingResponse` in FastAPI.
+  Implement a central `CentralModelRegistry` that classifies models into `PricingCategory.FREE` and `PricingCategory.PAID`, tracks context limits and capabilities, enriches live catalogs from OpenRouter, and computes token costs. All model resolution in the agent flows through this central abstraction.
 - **Consequences**:
-  - Works over standard HTTP/1.1 and HTTP/2 without custom proxy configurations.
-  - Allows clean cancellation via standard browser `AbortController` signals.
-  - Normalized event envelope (`token`, `error`, `done`) simplifies frontend consumption.
+  - The core agent never references vendor-specific model strings directly.
+  - Adding new models or custom endpoints updates the registry without touching conversation services.
+
+---
+
+## ADR-011: Strict Operational Modes (Free-Only vs Paid-Enabled) & Fallback Chains
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Users developing or experimenting with personal agents must never suffer unexpected billing charges from automatic model fallbacks or misconfigured queries.
+- **Decision**:
+  Implement three distinct operational modes: `free_only`, `paid_enabled`, and `manual`. In `free_only` mode, the backend strictly rejects any paid model requests and purges paid models from fallback chains. Configurable fallback chains automatically switch to backup free models when rate limits (429) or outages occur.
+- **Consequences**:
+  - Absolute zero-cost guarantee during development when `free_only` is active.
+  - Resilience against rate limits and transient provider outages through automatic failover.
+
+---
+
+## ADR-012: Real-Time Token Usage, Cost & Performance Telemetry
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Managing LLM costs and diagnosing model latency requires persistent telemetry per request and aggregate visibility.
+- **Decision**:
+  Create the `model_execution_metrics` table to capture prompt tokens, completion tokens, total tokens, estimated cost in USD, and latency in milliseconds for every model call (successful, fallback, or error). Expose aggregate statistics via `/api/v1/models/metrics` and display them in the Settings dashboard.
+- **Consequences**:
+  - Transparent audit trail of token consumption and estimated spending.
+  - Instant visibility into model response latency and error rates across providers.

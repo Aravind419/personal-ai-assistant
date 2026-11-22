@@ -9,7 +9,7 @@ async def test_conversation_crud_flow(async_client: AsyncClient):
         "/api/v1/conversations",
         json={
             "title": "Test AI Discussion",
-            "model": "openai/gpt-4o-mini",
+            "model": "meta-llama/llama-3.3-70b-instruct:free",
             "system_prompt": "You are a concise assistant.",
         },
     )
@@ -17,7 +17,7 @@ async def test_conversation_crud_flow(async_client: AsyncClient):
     conv = create_res.json()
     conv_id = conv["id"]
     assert conv["title"] == "Test AI Discussion"
-    assert conv["model"] == "openai/gpt-4o-mini"
+    assert conv["model"] == "meta-llama/llama-3.3-70b-instruct:free"
     assert conv["system_prompt"] == "You are a concise assistant."
 
     # 2. List conversations

@@ -17,7 +17,7 @@ from app.core.security import encrypt_secret, decrypt_secret, mask_secret
 DEFAULT_PROVIDER_METADATA = {
     ProviderType.OPENROUTER: {
         "name": "OpenRouter",
-        "default_model": "openai/gpt-4o-mini",
+        "default_model": "meta-llama/llama-3.3-70b-instruct:free",
         "base_url": "https://openrouter.ai/api/v1",
     },
     ProviderType.NVIDIA: {

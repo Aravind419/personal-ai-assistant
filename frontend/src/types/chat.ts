@@ -7,6 +7,7 @@ export interface Message {
   provider?: string | null;
   tokens_prompt?: number | null;
   tokens_completion?: number | null;
+  metadata_json?: string | null;
   created_at: string;
   isStreaming?: boolean;
 }

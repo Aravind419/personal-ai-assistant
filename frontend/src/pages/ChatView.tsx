@@ -5,15 +5,17 @@ import { ChatInput } from '../components/chat/ChatInput';
 import { conversationService } from '../services/conversationService';
 import { streamChatMessage } from '../services/chatStreamService';
 import { providerService } from '../services/providerService';
+import { modelService } from '../services/modelService';
 import type { Conversation, ConversationSummary, Message } from '../types/chat';
-import type { ModelInfo, ProviderConfigResponse } from '../types/provider';
+import type { ProviderConfigResponse, CentralModelInfo, ModelPolicyResponse } from '../types/provider';
 import {
   Sparkles,
   AlertCircle,
   Menu,
   KeyRound,
-  Bot,
-  Terminal,
+  ShieldCheck,
+  Coins,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -26,8 +28,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<CentralModelInfo[]>([]);
+  const [modelPolicy, setModelPolicy] = useState<ModelPolicyResponse | null>(null);
   const [providers, setProviders] = useState<ProviderConfigResponse[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -38,7 +42,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Load conversations and active provider models
+  // Load conversations, providers, models and policy
   const loadConversations = useCallback(async () => {
     try {
       const list = await conversationService.listConversations();
@@ -50,15 +54,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     }
   }, []);
 
-  const loadProviderInfo = useCallback(async () => {
+  const loadProviderAndModelInfo = useCallback(async () => {
     try {
-      const pList = await providerService.listProviders();
+      const [pList, mList, policy] = await Promise.all([
+        providerService.listProviders(),
+        modelService.listModels(),
+        modelService.getModelPolicy(),
+      ]);
       setProviders(pList);
-      const active = pList.find((p) => p.is_active) || pList[0];
-      if (active) {
-        const mList = await providerService.listModels(active.provider_type);
-        setModels(mList);
-      }
+      setModels(mList);
+      setModelPolicy(policy);
     } catch {
       // Fallback silently if models cannot be fetched dynamically
     }
@@ -70,8 +75,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
         selectConversation(list[0].id);
       }
     });
-    loadProviderInfo();
-  }, [loadConversations, loadProviderInfo]);
+    loadProviderAndModelInfo();
+  }, [loadConversations, loadProviderAndModelInfo]);
 
   useEffect(() => {
     scrollToBottom();
@@ -80,6 +85,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const selectConversation = async (id: string) => {
     try {
       setError(null);
+      setFallbackNotice(null);
       const conv = await conversationService.getConversation(id);
       setActiveConversation(conv);
       setActiveId(id);
@@ -91,12 +97,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const handleNewConversation = async () => {
     try {
       setError(null);
-      const activeProvider = providers.find((p) => p.is_active);
-      const model = activeProvider?.default_model || 'openai/gpt-4o-mini';
+      setFallbackNotice(null);
+      const defaultModel = modelPolicy?.selected_model || 'meta-llama/llama-3.3-70b-instruct:free';
 
       const newConv = await conversationService.createConversation({
         title: 'New Conversation',
-        model: model,
+        model: defaultModel,
       });
       await loadConversations();
       setActiveConversation(newConv);
@@ -137,7 +143,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
 
   const handleModelChange = async (newModel: string) => {
     if (!activeConversation) return;
+
+    // Check if user is in free-only mode and trying to select a paid model
+    if (modelPolicy?.model_mode === 'free_only') {
+      const target = models.find((m) => m.id === newModel);
+      if (target && target.pricing_category === 'paid') {
+        setError(`Cannot switch to paid model '${target.name}'. Free-Only mode is active. Enable Paid models in Settings.`);
+        return;
+      }
+    }
+
     try {
+      setError(null);
       await conversationService.updateConversation(activeConversation.id, { model: newModel });
       setActiveConversation({ ...activeConversation, model: newModel });
       await loadConversations();
@@ -149,19 +166,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const handleSendMessage = async (content: string) => {
     let currentConvId = activeId;
 
-    // Create a new conversation if none active
-    if (!currentConvId || !activeConversation) {
+    if (!currentConvId) {
       try {
-        const activeProvider = providers.find((p) => p.is_active);
-        const model = activeProvider?.default_model || 'openai/gpt-4o-mini';
+        const defaultModel = modelPolicy?.selected_model || 'meta-llama/llama-3.3-70b-instruct:free';
         const newConv = await conversationService.createConversation({
-          title: content.slice(0, 30) + '...',
-          model: model,
+          title: content.slice(0, 30),
+          model: defaultModel,
         });
-        currentConvId = newConv.id;
+        await loadConversations();
         setActiveConversation(newConv);
         setActiveId(newConv.id);
-        await loadConversations();
+        currentConvId = newConv.id;
       } catch (err: any) {
         setError(err?.message || 'Failed to initialize conversation.');
         return;
@@ -169,21 +184,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
     }
 
     // Append optimistic user message
-    const tempUserMessage: Message = {
+    const tempUserMsg: Message = {
       id: `temp-user-${Date.now()}`,
       conversation_id: currentConvId,
       role: 'user',
-      content: content,
+      content,
       created_at: new Date().toISOString(),
     };
 
-    // Prepare assistant streaming placeholder
-    const streamingAssistantMessage: Message = {
-      id: `temp-asst-${Date.now()}`,
+    // Append optimistic streaming placeholder
+    const tempAssistantMsg: Message = {
+      id: `temp-assistant-${Date.now()}`,
       conversation_id: currentConvId,
       role: 'assistant',
       content: '',
-      model: activeConversation?.model,
+      model: activeConversation?.model || modelPolicy?.selected_model,
       created_at: new Date().toISOString(),
       isStreaming: true,
     };
@@ -192,24 +207,22 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
       if (!prev) return null;
       return {
         ...prev,
-        messages: [...prev.messages, tempUserMessage, streamingAssistantMessage],
+        messages: [...prev.messages, tempUserMsg, tempAssistantMsg],
       };
     });
 
     setIsStreaming(true);
     setError(null);
+    setFallbackNotice(null);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
-    let accumulatedContent = '';
 
     await streamChatMessage(
       currentConvId,
       content,
       {
         onToken: (token) => {
-          accumulatedContent += token;
           setActiveConversation((prev) => {
             if (!prev) return null;
             const updated = [...prev.messages];
@@ -217,11 +230,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
             if (last && last.role === 'assistant') {
               updated[updated.length - 1] = {
                 ...last,
-                content: accumulatedContent,
+                content: last.content + token,
+                isStreaming: true,
               };
             }
             return { ...prev, messages: updated };
           });
+        },
+        onNotice: (notice) => {
+          setFallbackNotice(notice);
         },
         onDone: (result) => {
           setIsStreaming(false);
@@ -236,6 +253,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
                 id: result.message_id,
                 content: result.content,
                 model: result.model,
+                metadata_json: JSON.stringify({
+                  estimated_cost_usd: result.estimated_cost_usd,
+                  pricing_category: result.pricing_category,
+                  latency_ms: result.latency_ms,
+                  fallback_used: result.fallback_used,
+                }),
                 isStreaming: false,
               };
             }
@@ -249,7 +272,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
           setError(streamError);
           setActiveConversation((prev) => {
             if (!prev) return null;
-            // Remove the empty streaming message if failed
             const updated = [...prev.messages];
             const last = updated[updated.length - 1];
             if (last && last.role === 'assistant' && !last.content) {
@@ -288,6 +310,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
   const activeProvider = providers.find((p) => p.is_active) || providers[0];
   const hasApiKey = activeProvider?.has_api_key ?? false;
 
+  const freeModels = models.filter((m) => m.pricing_category === 'free');
+  const paidModels = models.filter((m) => m.pricing_category === 'paid');
+
+  const currentModelId = activeConversation?.model || modelPolicy?.selected_model || 'meta-llama/llama-3.3-70b-instruct:free';
+  const currentModelMeta = models.find((m) => m.id === currentModelId);
+
   return (
     <div className="flex h-[calc(100vh-4rem)] -m-4 md:-m-8 bg-slate-950 overflow-hidden">
       {/* Conversation Thread Sidebar */}
@@ -321,30 +349,77 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
             </div>
           </div>
 
-          {/* Model Selector & Provider Status */}
+          {/* Policy Mode Badge & Model Selector */}
           <div className="flex items-center gap-2">
+            {/* Operational Mode Pill */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border bg-slate-950 border-slate-800">
+              {modelPolicy?.model_mode === 'free_only' ? (
+                <>
+                  <Coins className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Free-Only Mode</span>
+                </>
+              ) : modelPolicy?.model_mode === 'paid_enabled' ? (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="text-indigo-400">Paid-Enabled (${modelPolicy?.max_cost_per_request}/req)</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-amber-400">Manual Model Lock</span>
+                </>
+              )}
+            </div>
+
+            {/* Model Selector Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 text-xs">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <select
-                value={activeConversation?.model || activeProvider?.default_model || 'openai/gpt-4o-mini'}
+                value={currentModelId}
                 onChange={(e) => handleModelChange(e.target.value)}
-                className="bg-transparent text-slate-200 text-xs outline-none cursor-pointer"
+                className="bg-transparent text-slate-200 text-xs outline-none cursor-pointer max-w-[200px] sm:max-w-[280px] truncate"
               >
-                {models.length > 0 ? (
-                  models.map((m) => (
+                <optgroup label="Free Models (Zero Cost)">
+                  {freeModels.map((m) => (
                     <option key={m.id} value={m.id} className="bg-slate-900 text-slate-200">
-                      {m.name}
+                      🟢 {m.name}
                     </option>
-                  ))
-                ) : (
-                  <option value="openai/gpt-4o-mini" className="bg-slate-900 text-slate-200">
-                    OpenAI: GPT-4o Mini
-                  </option>
-                )}
+                  ))}
+                </optgroup>
+                <optgroup label="Paid / Premium Models">
+                  {paidModels.map((m) => (
+                    <option
+                      key={m.id}
+                      value={m.id}
+                      disabled={modelPolicy?.model_mode === 'free_only'}
+                      className={`bg-slate-900 ${
+                        modelPolicy?.model_mode === 'free_only' ? 'text-slate-500' : 'text-slate-200'
+                      }`}
+                    >
+                      💎 {m.name} {modelPolicy?.model_mode === 'free_only' ? '(Locked: Free-Only)' : ''}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </div>
           </div>
         </div>
+
+        {/* Fallback Notice Banner */}
+        {fallbackNotice && (
+          <div className="bg-amber-950/60 border-b border-amber-800/60 px-4 py-2 flex items-center justify-between text-xs text-amber-300">
+            <div className="flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>{fallbackNotice}</span>
+            </div>
+            <button
+              onClick={() => setFallbackNotice(null)}
+              className="text-amber-400 hover:text-amber-200 text-[11px] underline cursor-pointer ml-3"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Missing API Key Alert Banner */}
         {!hasApiKey && (
@@ -352,85 +427,78 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
             <div className="flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                <strong>OpenRouter API Key required:</strong> Configure your API key in Settings to begin chatting with live models.
+                <strong>OpenRouter Gateway:</strong> Add your OpenRouter API key in Settings to execute completions across free and commercial models.
               </span>
             </div>
             <button
               onClick={onNavigateToSettings}
               className="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition-colors cursor-pointer shrink-0 ml-3"
             >
-              Open Settings
+              Configure Gateway
             </button>
           </div>
         )}
 
         {/* Global Error Banner */}
         {error && (
-          <div className="bg-rose-950/70 border-b border-rose-800/80 px-4 py-2 flex items-center gap-2 text-xs text-rose-200">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span className="flex-1">{error}</span>
-            <button onClick={() => setError(null)} className="hover:text-white font-bold ml-2">
-              &times;
+          <div className="bg-rose-950/80 border-b border-rose-900/60 px-4 py-2 flex items-center justify-between text-xs text-rose-300">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-rose-400 hover:text-rose-200 text-[11px] underline cursor-pointer ml-3"
+            >
+              Dismiss
             </button>
           </div>
         )}
 
-        {/* Messages Stream Container */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Message Thread Viewport */}
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
           {!activeConversation || activeConversation.messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center p-6 text-center max-w-xl mx-auto space-y-6">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                <Bot className="w-7 h-7" />
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto px-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 shadow-lg shadow-indigo-950/40">
+                <Sparkles className="w-6 h-6" />
               </div>
-
-              <div>
-                <h3 className="text-lg font-bold text-slate-100">Personal AI Assistant</h3>
-                <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">
-                  Phase 1 conversational engine connected to OpenRouter. Ask questions, analyze code, or brainstorm ideas.
-                </p>
-              </div>
-
-              {/* Starter Prompt Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left">
-                <button
-                  onClick={() => handleSendMessage("What can you help me with in this project?")}
-                  className="p-3.5 rounded-xl border border-slate-800/80 bg-slate-900/40 hover:bg-slate-900 hover:border-indigo-500/40 transition-colors text-xs space-y-1 cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2 text-indigo-400 font-medium">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Project Overview</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">What can you help me with in this project?</p>
-                </button>
-
-                <button
-                  onClick={() => handleSendMessage("Summarize the system architecture and tech stack.")}
-                  className="p-3.5 rounded-xl border border-slate-800/80 bg-slate-900/40 hover:bg-slate-900 hover:border-indigo-500/40 transition-colors text-xs space-y-1 cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2 text-violet-400 font-medium">
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>Architecture</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">Summarize the system architecture and tech stack.</p>
-                </button>
-              </div>
+              <h3 className="text-base font-bold text-white mb-1">Provider-Independent AI Assistant</h3>
+              <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                {modelPolicy?.model_mode === 'free_only'
+                  ? 'Free-Only mode is active. You can chat with open weights reasoning models at zero cost with automated fallback chains.'
+                  : 'Start a conversation with your configured AI provider and preferred model.'}
+              </p>
+              {currentModelMeta && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono">
+                  <span>Current Model:</span>
+                  <span className="text-indigo-300 font-semibold">{currentModelMeta.name}</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800">
+                    {currentModelMeta.pricing_category.toUpperCase()}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="divide-y divide-transparent">
-              {activeConversation.messages.map((m) => (
-                <ChatMessage key={m.id} message={m} />
+            <>
+              {activeConversation.messages.map((message) => (
+                <ChatMessage key={message.id} message={message} />
               ))}
               <div ref={messagesEndRef} />
-            </div>
+            </>
           )}
         </div>
 
-        {/* Message Input Bar */}
+        {/* Interactive Chat Input Bar */}
         <ChatInput
           onSendMessage={handleSendMessage}
-          isStreaming={isStreaming}
           onStopGeneration={handleStopGeneration}
-          disabled={!hasApiKey && !isStreaming}
+          isStreaming={isStreaming}
+          disabled={false}
+          placeholder={
+            modelPolicy?.model_mode === 'free_only'
+              ? 'Ask anything (Free-Only Mode • Zero Cost)...'
+              : 'Ask anything...'
+          }
         />
       </div>
     </div>

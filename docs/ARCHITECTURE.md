@@ -45,7 +45,11 @@ The Personal AI Agent is a long-term engineering initiative designed to build a 
 | **Backend** | Python 3.13 + FastAPI | High-throughput asynchronous REST API with automatic OpenAPI documentation and Pydantic validation. |
 | **Database** | PostgreSQL 16 | Relational backbone with ACID transactions, JSONB extensibility, and native vector search capabilities. |
 | **Vector Engine** | pgvector (Prepared) | Single-database storage eliminating dual-database synchronization issues between vectors and relational records. |
-| **AI Provider** | Provider-Independent Adapter Architecture | Isolates core agent from model vendors. OpenRouter implemented as first functional adapter; NVIDIA & Ollama prepared. |
+| **AI Provider** | Provider-Independent Adapter Architecture | Isolates core agent from model vendors. OpenRouter implemented as initial gateway; NVIDIA & Ollama prepared. |
+| **Model Registry** | Central Model Registry & Policy Engine | Central catalog managing pricing categories (`free`/`paid`), capabilities, context limits, and token cost calculation. |
+| **Operational Modes** | Free-Only, Paid-Enabled, Manual | Strict guardrails: Free-Only mode strictly prevents executing or falling back to paid models. |
+| **Failover Strategy** | Multi-Candidate Fallback Chains | Automatically reroutes requests to alternative models on rate limits (429) or provider outages with client notices. |
+| **Execution Telemetry**| Model Metrics & Cost Tracking | Captures token volume, estimated USD costs, latency, and error types in `model_execution_metrics`. |
 | **Streaming** | Server-Sent Events (SSE) | Unidirectional low-overhead token delivery with standard browser `AbortController` cancellation. |
 | **Credential Security** | Fernet Symmetric Encryption at Rest | API keys encrypted with keys derived from master `SECRET_KEY`; never exposed in API responses. |
 | **Tool Execution** | Controlled Backend Dispatch | Parameter validation via JSON Schema; no arbitrary shell or unrestricted computer access. |

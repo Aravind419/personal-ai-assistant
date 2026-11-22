@@ -1,9 +1,20 @@
 import { env } from '../config/env';
 
+export interface StreamDoneResult {
+  message_id: string;
+  content: string;
+  model: string;
+  estimated_cost_usd?: number;
+  pricing_category?: string;
+  latency_ms?: number;
+  fallback_used?: boolean;
+}
+
 export interface StreamCallbacks {
   onToken: (token: string) => void;
-  onDone: (result: { message_id: string; content: string; model: string }) => void;
+  onDone: (result: StreamDoneResult) => void;
   onError: (error: string) => void;
+  onNotice?: (notice: string) => void;
 }
 
 /**
@@ -79,6 +90,8 @@ export async function streamChatMessage(
 
           if (payload.type === 'token' && typeof payload.delta === 'string') {
             callbacks.onToken(payload.delta);
+          } else if (payload.type === 'notice' && typeof payload.message === 'string') {
+            callbacks.onNotice?.(payload.message);
           } else if (payload.type === 'error') {
             callbacks.onError(payload.error || payload.message || 'Streaming error');
           } else if (payload.type === 'done') {
@@ -86,6 +99,10 @@ export async function streamChatMessage(
               message_id: payload.message_id,
               content: payload.content,
               model: payload.model,
+              estimated_cost_usd: payload.estimated_cost_usd,
+              pricing_category: payload.pricing_category,
+              latency_ms: payload.latency_ms,
+              fallback_used: payload.fallback_used,
             });
           }
         } catch {

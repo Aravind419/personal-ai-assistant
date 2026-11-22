@@ -6,9 +6,9 @@
 
 ## 1. Executive Summary
 
-- **Current Development Phase**: **Phase 1 (Basic AI Agent Implementation) — VERIFIED**
+- **Current Development Phase**: **Multi-Model Architecture & Cost Controls Complete — VERIFIED**
 - **Next Development Phase**: **Phase 2 (Semantic Memory & Background Workers) — NOT_STARTED**
-- **Overall Progress**: Phase 0 and Phase 1 are 100% complete and verified. The provider-independent LLM architecture, OpenRouter adapter, encrypted credential storage, conversational database models, SSE streaming chat completions, React Chat view, and Provider Settings view are verified and active.
+- **Overall Progress**: Phase 0, Phase 1, and the Provider-Independent Multi-Model Architecture with Cost Controls are 100% complete and verified. The system supports free and paid models, OpenRouter unified gateway, central model registry with 100+ models, operational modes (Free-Only, Paid-Enabled, Manual), automated fallback chains, token usage and cost tracking, and interactive dashboards.
 
 ---
 
@@ -18,6 +18,7 @@
 |---|---|---|---|
 | **Phase 0** | Engineering Foundation, FastAPI, React 19, DB & Diagnostic Probes | **VERIFIED** | 2026-11-22 |
 | **Phase 1** | Basic AI Agent, OpenRouter Provider, Chat & Settings UI, Streaming, Tools | **VERIFIED** | 2026-11-22 |
+| **Multi-Model** | Central Model Registry, Free-Only Mode, Fallback Chains, Cost Controls | **VERIFIED** | 2026-11-22 |
 | **Phase 2** | Persistent Memory (pgvector), Celery & Redis Workers, Tasks View | **NOT_STARTED** | — |
 | **Phase 3** | Tool Execution, MCP Bridge, Human-in-the-Loop Approvals Engine | **NOT_STARTED** | — |
 | **Phase 4** | Proactive Background Automations & OAuth Integrations | **NOT_STARTED** | — |
@@ -26,26 +27,39 @@
 
 ## 3. Features Implemented & Verified
 
-### Backend (FastAPI + SQLAlchemy + Providers)
+### Backend (FastAPI + SQLAlchemy + Providers + Model Registry)
 - [x] Application lifespan, CORS middleware, centralized RFC error handlers (`app.core.exceptions`).
 - [x] Pydantic v2 settings management with regex secret sanitization (`app.core.config`).
 - [x] Fernet symmetric encryption and decryption for API keys (`app.core.security`).
 - [x] Provider-independent LLM architecture (`app.providers.base`, `app.providers.schemas`, `app.providers.registry`).
 - [x] Complete, genuine OpenRouter provider adapter (`app.providers.adapters.openrouter`) with credential validation, model listing, chat completions, SSE streaming, and error normalization.
+- [x] Central Model Registry (`app.providers.model_registry`) maintaining model IDs, pricing categories (`free` vs `paid`), capabilities, context limits, and cost calculations.
+- [x] Prioritized free models for zero-cost development: Llama 3.3 70B Free, Gemini 2.0 Flash Exp Free, DeepSeek R1 Free, DeepSeek Chat Free, Qwen 2.5 Coder Free, Mistral 7B Free.
+- [x] Operational modes: `free_only` (default), `paid_enabled`, and `manual` (`ai_model_policies` table).
+- [x] Strict Free-Only enforcement: Paid models are never executed or used in fallback when in Free-Only mode.
+- [x] Configurable multi-model fallback chains with SSE notice events streamed to the client during failovers.
+- [x] Real-time token usage, cost estimation, provider error, and latency telemetry (`model_execution_metrics` table, Alembic migration `003_model_policy_and_metrics.py`).
+- [x] Dedicated model management endpoints (`/api/v1/models`, `/api/v1/models/policy`, `/api/v1/models/metrics`).
 - [x] Prepared future provider adapter stubs for NVIDIA NIM and local Ollama (`app.providers.adapters.nvidia`, `app.providers.adapters.ollama`).
 - [x] Provider configuration management and testing endpoints (`/api/v1/providers`).
-- [x] Database models and Alembic migration `002_conversations_and_providers.py` for `provider_configurations`, `conversations`, and `messages` tables.
 - [x] Conversation management service and REST endpoints (`/api/v1/conversations`).
 - [x] Real-time SSE streaming chat endpoint (`POST /api/v1/conversations/{id}/messages`) with automatic persistence of user and assistant messages in PostgreSQL.
 - [x] Sandboxed backend tool registry and execution foundation (`app.tools.base`, `app.tools.builtin`).
-- [x] Automated test suite with 22 passing pytest tests covering providers, security encryption, conversations CRUD, streaming completions, and tool execution.
+- [x] Automated test suite with **30 passing pytest tests** covering model registry, free-only mode, fallback execution, cost estimation, providers, security encryption, conversations CRUD, streaming completions, and tool execution.
 
 ### Frontend (React 19 + TypeScript + Vite + Tailwind v4)
 - [x] Type-safe application shell with responsive sidebar, collapsible mobile drawer, and header.
-- [x] Active **Chat Interface** (`ChatView.tsx`) with conversation history sidebar, new chat creation, model selection, auto-scroll, copy response, and real-time SSE token streaming.
+- [x] Active **Chat Interface** (`ChatView.tsx`) with conversation history sidebar, new chat creation, model dropdown grouped by Free vs Paid, operational mode pill indicator, fallback notice banner, and real-time SSE token streaming.
+- [x] Message execution telemetry badges (`ChatMessage.tsx`) showing Free/Paid rate, response latency, and fallback indicators.
 - [x] Markdown rendering with custom code block syntax styling and copy action (`ChatMessage.tsx`).
-- [x] Active **Provider Settings Interface** (`SettingsView.tsx`) with masked API key input, eye toggle, model selection, live connection testing, and prepared cards for NVIDIA and Ollama.
-- [x] Full navigation architecture with Overview, Chat, and Settings active, and 8 phase-gated placeholders.
+- [x] Active **Provider & Model Settings Interface** (`SettingsView.tsx`):
+  - Operational Mode selection (Free-Only vs Paid-Enabled vs Manual).
+  - Primary model selector and per-request max cost ceiling controls.
+  - Automatic fallback chain priority manager.
+  - OpenRouter unified gateway credential configuration with Fernet encryption.
+  - Token Usage, Estimated Cost ($USD), and Model Performance Analytics dashboard.
+  - Central Model Registry explorer with filterable Free and Paid model cards.
+  - Prepared cards for modular NVIDIA NIM and Ollama integrations.
 - [x] Clean TypeScript build (`tsc -b && vite build`) with 0 errors.
 - [x] Live browser workflow verification using Playwright MCP testing Chat and Settings pages.
 

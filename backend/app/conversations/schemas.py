@@ -12,13 +12,14 @@ class MessageResponse(BaseModel):
     provider: Optional[str] = None
     tokens_prompt: Optional[int] = None
     tokens_completion: Optional[int] = None
+    metadata_json: Optional[str] = None
     created_at: datetime
 
 
 class ConversationBase(BaseModel):
     title: str = Field(default="New Conversation", max_length=255)
     provider_type: str = "openrouter"
-    model: str = "openai/gpt-4o-mini"
+    model: str = "meta-llama/llama-3.3-70b-instruct:free"
     system_prompt: Optional[str] = None
 
 

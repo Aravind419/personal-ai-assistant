@@ -15,10 +15,34 @@ from app.providers.schemas import (
 from app.core.logging import logger
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
+DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 # Fallback curated models for OpenRouter in case of offline/local diagnostics
 CURATED_OPENROUTER_MODELS = [
+    ModelInfo(
+        id="meta-llama/llama-3.3-70b-instruct:free",
+        name="Meta: Llama 3.3 70B Instruct (Free)",
+        context_length=131072,
+        description="State-of-the-art open weights model from Meta with zero cost.",
+    ),
+    ModelInfo(
+        id="google/gemini-2.0-flash-exp:free",
+        name="Google: Gemini 2.0 Flash (Free)",
+        context_length=1048576,
+        description="High-speed multimodal next-generation reasoning model at zero cost.",
+    ),
+    ModelInfo(
+        id="deepseek/deepseek-r1:free",
+        name="DeepSeek: R1 Reasoning (Free)",
+        context_length=65536,
+        description="Chain-of-thought mathematical and logic reasoning model.",
+    ),
+    ModelInfo(
+        id="deepseek/deepseek-chat:free",
+        name="DeepSeek: V3 Chat (Free)",
+        context_length=65536,
+        description="High-performance general dialogue and coding model.",
+    ),
     ModelInfo(
         id="openai/gpt-4o-mini",
         name="OpenAI: GPT-4o Mini",
@@ -42,18 +66,6 @@ CURATED_OPENROUTER_MODELS = [
         name="Anthropic: Claude 3.5 Sonnet",
         context_length=200000,
         description="Industry-leading code, reasoning, and analysis model from Anthropic.",
-    ),
-    ModelInfo(
-        id="meta-llama/llama-3.3-70b-instruct",
-        name="Meta: Llama 3.3 70B Instruct",
-        context_length=131072,
-        description="State-of-the-art open weights model from Meta.",
-    ),
-    ModelInfo(
-        id="google/gemini-2.0-flash-exp:free",
-        name="Google: Gemini 2.0 Flash (Free)",
-        context_length=1048576,
-        description="High-speed multimodal next-generation reasoning model.",
     ),
 ]
 
@@ -148,6 +160,9 @@ class OpenRouterProvider(BaseLLMProvider):
             )
 
     async def list_models(self) -> List[ModelInfo]:
+        from app.providers.model_registry import CentralModelRegistry
+        from app.providers.schemas import PricingCategory
+
         url = f"{self.base_url}/models"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -155,10 +170,12 @@ class OpenRouterProvider(BaseLLMProvider):
                 if response.status_code == 200:
                     data = response.json()
                     raw_models = data.get("data", [])
+                    CentralModelRegistry.enrich_from_openrouter_catalog(raw_models)
                     models = []
                     for m in raw_models:
                         model_id = m.get("id")
                         if model_id:
+                            is_free = CentralModelRegistry.is_free_model(model_id, m.get("pricing"))
                             models.append(
                                 ModelInfo(
                                     id=model_id,
@@ -166,6 +183,7 @@ class OpenRouterProvider(BaseLLMProvider):
                                     context_length=m.get("context_length"),
                                     description=m.get("description"),
                                     pricing=m.get("pricing"),
+                                    pricing_category=PricingCategory.FREE if is_free else PricingCategory.PAID,
                                 )
                             )
                     if models:

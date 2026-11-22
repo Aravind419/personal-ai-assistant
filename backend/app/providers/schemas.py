@@ -10,6 +10,26 @@ class ProviderType(str, Enum):
     CUSTOM = "custom"
 
 
+class PricingCategory(str, Enum):
+    FREE = "free"
+    PAID = "paid"
+
+
+class ModelMode(str, Enum):
+    FREE_ONLY = "free_only"
+    PAID_ENABLED = "paid_enabled"
+    MANUAL = "manual"
+
+
+class ModelCapability(str, Enum):
+    CHAT = "chat"
+    STREAMING = "streaming"
+    TOOLS = "tools"
+    VISION = "vision"
+    REASONING = "reasoning"
+    CODE = "code"
+
+
 class ChatMessageRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
@@ -53,6 +73,54 @@ class ModelInfo(BaseModel):
     context_length: Optional[int] = None
     description: Optional[str] = None
     pricing: Optional[Dict[str, Any]] = None
+    pricing_category: Optional[PricingCategory] = None
+    capabilities: Optional[List[str]] = None
+
+
+class CentralModelInfo(BaseModel):
+    id: str
+    name: str
+    provider_type: ProviderType
+    pricing_category: PricingCategory
+    cost_per_million_input: float = 0.0
+    cost_per_million_output: float = 0.0
+    context_limit: int
+    supported_capabilities: List[str]
+    is_available: bool = True
+    is_default: bool = False
+    description: Optional[str] = None
+
+
+class ModelPolicyResponse(BaseModel):
+    id: str
+    model_mode: ModelMode
+    selected_model: str
+    fallback_models: List[str]
+    enable_fallback: bool
+    max_cost_per_request: float
+    monthly_budget_limit: float
+
+
+class ModelPolicyUpdate(BaseModel):
+    model_mode: Optional[ModelMode] = None
+    selected_model: Optional[str] = None
+    fallback_models: Optional[List[str]] = None
+    enable_fallback: Optional[bool] = None
+    max_cost_per_request: Optional[float] = None
+    monthly_budget_limit: Optional[float] = None
+
+
+class ModelUsageSummary(BaseModel):
+    total_requests: int
+    successful_requests: int
+    failed_requests: int
+    fallback_requests: int
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    total_tokens: int
+    total_estimated_cost_usd: float
+    average_latency_ms: Optional[float] = None
+    model_breakdown: List[Dict[str, Any]] = []
 
 
 class ProviderTestResult(BaseModel):

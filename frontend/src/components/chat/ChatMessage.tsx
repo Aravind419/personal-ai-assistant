@@ -115,6 +115,32 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
             {message.isStreaming && (
               <span className="inline-block w-2 h-4 ml-1 bg-indigo-400 animate-pulse rounded-xs align-middle" />
             )}
+
+            {/* Execution Telemetry (Cost, Latency, Fallback) */}
+            {!isUser && !message.isStreaming && message.metadata_json && (() => {
+              try {
+                const meta = JSON.parse(message.metadata_json);
+                return (
+                  <div className="flex items-center gap-2 pt-1 text-[10px] text-slate-500 font-mono">
+                    {meta.fallback_used && (
+                      <span className="text-amber-400 bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800">
+                        Fallback Model
+                      </span>
+                    )}
+                    {meta.pricing_category === 'free' ? (
+                      <span className="text-emerald-400">100% Free ($0.00)</span>
+                    ) : (
+                      <span>${meta.estimated_cost_usd?.toFixed(4)}</span>
+                    )}
+                    {meta.latency_ms && (
+                      <span>• {meta.latency_ms} ms</span>
+                    )}
+                  </div>
+                );
+              } catch {
+                return null;
+              }
+            })()}
           </div>
         </div>
       </div>
