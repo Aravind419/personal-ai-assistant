@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from app.models.tool import ToolApproval, ToolExecution
 from app.tools.schemas import PermissionLevel, ApprovalStatus
 from app.tools.validator import CanonicalArgumentHasher, SecretSanitizer
-from app.core.exceptions import ResourceNotFoundException, ValidationException
+from app.core.exceptions import ResourceNotFoundException, ValidationException, SecurityException
 from app.core.logging import logger
 
 DEFAULT_APPROVAL_EXPIRY_MINUTES = 30
@@ -32,6 +32,7 @@ class ApprovalManager:
         target_resource: Optional[str] = None,
         expected_consequences: Optional[str] = None,
         conversation_id: Optional[str] = None,
+        requested_by: str = "personal_user",
         expiry_minutes: int = DEFAULT_APPROVAL_EXPIRY_MINUTES,
         db: Optional[AsyncSession] = None,
     ) -> ToolApproval:
@@ -54,6 +55,7 @@ class ApprovalManager:
             risk_level=risk_level,
             reason=reason,
             status=ApprovalStatus.PENDING.value,
+            requested_by=requested_by,
             expires_at=expires_at,
         )
 
@@ -119,11 +121,13 @@ class ApprovalManager:
         cls,
         approval_id: str,
         db: AsyncSession,
-        decided_by: str = "user",
+        decided_by: str = "personal_user",
         decision_reason: Optional[str] = None,
+        confirm_critical: bool = False,
     ) -> ToolApproval:
         """
         Race-safe atomic state transition: Only transitions if current status is PENDING and not expired.
+        Validates user authorization and requires explicit confirmation for Level 3 Critical actions.
         """
         now = datetime.datetime.now(datetime.timezone.utc)
         
@@ -135,6 +139,14 @@ class ApprovalManager:
             approval.status = ApprovalStatus.EXPIRED.value
             await db.commit()
             raise ValidationException("Cannot approve: Approval request has expired.")
+
+        # User boundary check: only authorized user can approve
+        if decided_by != approval.requested_by and approval.requested_by != "personal_user":
+            raise SecurityException(f"User '{decided_by}' is not authorized to approve an action requested by '{approval.requested_by}'.")
+
+        # Level 3 Critical action check: requires explicit confirmation
+        if approval.permission_level == PermissionLevel.CRITICAL.value and not confirm_critical:
+            raise ValidationException("Level 3 Critical action requires explicit confirmation (confirm_critical=true).")
 
         # Atomic update
         stmt = (
@@ -165,13 +177,16 @@ class ApprovalManager:
         cls,
         approval_id: str,
         db: AsyncSession,
-        decided_by: str = "user",
+        decided_by: str = "personal_user",
         decision_reason: Optional[str] = None,
     ) -> ToolApproval:
         now = datetime.datetime.now(datetime.timezone.utc)
         approval = await cls.get_approval(approval_id, db)
         if approval.status != ApprovalStatus.PENDING.value:
             raise ValidationException(f"Cannot reject: Request is already in '{approval.status}' state.")
+
+        if decided_by != approval.requested_by and approval.requested_by != "personal_user":
+            raise SecurityException(f"User '{decided_by}' is not authorized to reject an action requested by '{approval.requested_by}'.")
 
         stmt = (
             update(ToolApproval)
@@ -196,12 +211,15 @@ class ApprovalManager:
         cls,
         approval_id: str,
         db: AsyncSession,
-        decided_by: str = "user",
+        decided_by: str = "personal_user",
     ) -> ToolApproval:
         now = datetime.datetime.now(datetime.timezone.utc)
         approval = await cls.get_approval(approval_id, db)
         if approval.status != ApprovalStatus.PENDING.value:
             raise ValidationException(f"Cannot cancel: Request is already in '{approval.status}' state.")
+
+        if decided_by != approval.requested_by and approval.requested_by != "personal_user":
+            raise SecurityException(f"User '{decided_by}' is not authorized to cancel an action requested by '{approval.requested_by}'.")
 
         stmt = (
             update(ToolApproval)
@@ -230,7 +248,7 @@ class ApprovalManager:
     ) -> Tuple[bool, Optional[str], Optional[ToolApproval]]:
         """
         Validates that an approval exists, is APPROVED, is not expired,
-        and its arguments_hash matches the exact current arguments.
+        has not already been executed, and its arguments_hash matches the exact current arguments.
         """
         stmt = select(ToolApproval).where(ToolApproval.id == approval_id)
         result = await db.execute(stmt)
@@ -243,6 +261,9 @@ class ApprovalManager:
 
         if approval.is_expired():
             return False, "Approval has expired.", approval
+
+        if approval.is_executed:
+            return False, "Approval has already been executed. Approvals cannot be reused.", approval
 
         # Check argument tamper resistance
         current_hash = CanonicalArgumentHasher.compute_hash(arguments)
@@ -259,3 +280,33 @@ class ApprovalManager:
             return False, "Arguments were modified after approval was granted. Previous approval invalidated.", approval
 
         return True, None, approval
+
+    @classmethod
+    async def mark_approval_executed(
+        cls,
+        approval_id: str,
+        execution_id: str,
+        db: AsyncSession,
+    ) -> None:
+        """
+        Atomically marks the approval as executed, ensuring it cannot be executed a second time.
+        Raises ValidationException if already executed.
+        """
+        now = datetime.datetime.now(datetime.timezone.utc)
+        stmt = (
+            update(ToolApproval)
+            .where(
+                ToolApproval.id == approval_id,
+                ToolApproval.is_executed == False,
+                ToolApproval.status == ApprovalStatus.APPROVED.value,
+            )
+            .values(
+                is_executed=True,
+                executed_at=now,
+                execution_id=execution_id,
+            )
+        )
+        res = await db.execute(stmt)
+        if res.rowcount == 0:
+            raise ValidationException("Failed to claim approval for execution: It has already been executed or state was modified.")
+        await db.commit()

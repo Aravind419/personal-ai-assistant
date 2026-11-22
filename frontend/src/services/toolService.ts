@@ -133,13 +133,15 @@ export const toolService = {
   async approveAction(
     approvalId: string,
     executeNow = true,
-    reason?: string
+    reason?: string,
+    confirmCritical = false
   ): Promise<{ approval: Approval; execution?: ToolExecutionDetail }> {
     return apiClient(`/approvals/${approvalId}/approve`, {
       method: 'POST',
       body: JSON.stringify({
         execute_now: executeNow,
         reason,
+        confirm_critical: confirmCritical,
       }),
     });
   },

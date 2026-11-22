@@ -288,12 +288,15 @@ def _to_approval_response(app: ToolApproval) -> ApprovalResponse:
         risk_level=app.risk_level,
         reason=app.reason,
         status=ApprovalStatus(app.status),
+        requested_by=app.requested_by,
         created_at=app.created_at,
         expires_at=app.expires_at,
         decided_at=app.decided_at,
         decided_by=app.decided_by,
         decision_reason=app.decision_reason,
         execution_id=app.execution_id,
+        is_executed=app.is_executed,
+        executed_at=app.executed_at,
     )
 
 
@@ -332,8 +335,9 @@ async def approve_action(
     app = await ApprovalManager.approve(
         approval_id=approval_id,
         db=db,
-        decided_by="user",
+        decided_by=payload.decided_by or "personal_user",
         decision_reason=payload.reason or "Explicit user approval granted.",
+        confirm_critical=payload.confirm_critical,
     )
 
     execution_result = None
@@ -349,6 +353,7 @@ async def approve_action(
             arguments=args,
             conversation_id=app.conversation_id,
             approval_id=app.id,
+            user_identity=payload.decided_by or "personal_user",
             db=db,
         )
 
@@ -367,7 +372,7 @@ async def reject_action(
     app = await ApprovalManager.reject(
         approval_id=approval_id,
         db=db,
-        decided_by="user",
+        decided_by=payload.decided_by or "personal_user",
         decision_reason=payload.reason or "Rejected by user.",
     )
     return _to_approval_response(app)
@@ -376,11 +381,12 @@ async def reject_action(
 @approvals_router.post("/{approval_id}/cancel", response_model=ApprovalResponse, summary="Cancel approval request")
 async def cancel_action(
     approval_id: str,
+    decided_by: str = Query("personal_user"),
     db: AsyncSession = Depends(get_db),
 ):
     app = await ApprovalManager.cancel(
         approval_id=approval_id,
         db=db,
-        decided_by="user",
+        decided_by=decided_by,
     )
     return _to_approval_response(app)

@@ -32,6 +32,11 @@ class ValidationException(AppException):
         super().__init__(message, status_code=status.HTTP_400_BAD_REQUEST, details=details)
 
 
+class SecurityException(AppException):
+    def __init__(self, message: str = "Access denied due to security policy", details: dict | None = None):
+        super().__init__(message, status_code=status.HTTP_403_FORBIDDEN, details=details)
+
+
 
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
     logger.error(f"Application error on {request.method} {request.url.path}: {exc.message} (status: {exc.status_code})")

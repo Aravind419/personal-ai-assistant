@@ -90,6 +90,9 @@ export interface Approval {
   risk_level: string;
   reason: string;
   status: ApprovalStatus;
+  requested_by?: string;
+  is_executed?: boolean;
+  executed_at?: string | null;
   created_at: string;
   expires_at: string;
   decided_at?: string | null;

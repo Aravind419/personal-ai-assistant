@@ -16,15 +16,22 @@ from app.core.exceptions import ResourceNotFoundException, ValidationException
 
 class PromptInjectionGuard:
     """
-    Guards against prompt injection in untrusted MCP descriptions and outputs.
-    Ensures that any tool output or tool description is safely delimited and
-    stripped of instructions attempting to override system behavior.
+    Guards against prompt injection, escape delimiters, and DoS payload attacks
+    in untrusted MCP descriptions and outputs.
+    Ensures that tool outputs are bounded, isolated, and stripped of injection attacks.
     """
+    MAX_OUTPUT_CHARS = 50000
+
     PROMPT_OVERRIDE_PATTERNS = [
         re.compile(r'(?i)<\s*/?\s*(system|instruction|developer|admin)[^>]*>'),
         re.compile(r'(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions'),
         re.compile(r'(?i)you\s+are\s+now\s+in\s+dan\s+mode'),
         re.compile(r'(?i)disregard\s+(all\s+)?previous\s+rules'),
+        re.compile(r'(?i)<\s*script[^>]*>.*?<\s*/\s*script\s*>', re.DOTALL),
+        re.compile(r'(?i)<\s*iframe[^>]*>.*?<\s*/\s*iframe\s*>', re.DOTALL),
+        re.compile(r'(?i)javascript:\s*'),
+        re.compile(r'(?i)onerror\s*='),
+        re.compile(r'(?i)onload\s*='),
     ]
 
     @classmethod
@@ -34,13 +41,24 @@ class PromptInjectionGuard:
         sanitized = text
         for pat in cls.PROMPT_OVERRIDE_PATTERNS:
             sanitized = pat.sub('[BLOCKED_INJECTION_ATTEMPT]', sanitized)
+        # Defense against envelope breakout: escape closing tags
+        sanitized = sanitized.replace('</tool_output>', '[ESCAPED_CLOSING_TAG]')
         return sanitized
 
     @classmethod
     def isolate_output(cls, tool_name: str, raw_output: Any) -> str:
         serialized = json.dumps(raw_output, default=str) if isinstance(raw_output, (dict, list)) else str(raw_output)
+        
+        # Enforce maximum payload length to prevent context explosion / DoS
+        if len(serialized) > cls.MAX_OUTPUT_CHARS:
+            serialized = (
+                serialized[:cls.MAX_OUTPUT_CHARS]
+                + f"\n...[TRUNCATED: Output exceeded maximum allowable size of {cls.MAX_OUTPUT_CHARS} characters]"
+            )
+
         clean = cls.sanitize(serialized)
-        return f'<tool_output tool="{tool_name}" source="untrusted_mcp">\n{clean}\n</tool_output>'
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', str(tool_name))
+        return f'<tool_output tool="{clean_name}" source="untrusted_mcp">\n{clean}\n</tool_output>'
 
 
 class McpTool(BaseTool):
@@ -119,6 +137,23 @@ class McpClient:
         self.headers = headers or {}
         self.env = env or {}
         self.timeout = timeout
+
+    async def initialize(self) -> Dict[str, Any]:
+        """Performs initial MCP protocol handshake."""
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "personal-ai-assistant",
+                    "version": "1.0.0",
+                },
+            },
+        }
+        return await self._send_request(payload)
 
     async def list_tools(self) -> List[Dict[str, Any]]:
         """Queries MCP server for tools/list."""
@@ -259,6 +294,13 @@ class McpServerManager:
         )
 
         try:
+            # 1. MCP Protocol Handshake
+            try:
+                await client.initialize()
+            except Exception as init_err:
+                logger.info(f"MCP server '{server.name}' initialize notice: {init_err}")
+
+            # 2. Discover Tools
             tools_list = await client.list_tools()
             registered_count = 0
             for t in tools_list:

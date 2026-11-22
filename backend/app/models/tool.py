@@ -38,12 +38,15 @@ class ToolApproval(Base, TimestampMixin):
     # State: pending, approved, rejected, expired, cancelled
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     
+    requested_by: Mapped[str] = mapped_column(String(64), nullable=False, default="personal_user")
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     decided_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     decided_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     decision_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     execution_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    is_executed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    executed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     executions: Mapped[list["ToolExecution"]] = relationship(
         "ToolExecution",

@@ -47,10 +47,10 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleInChatApprove = async (approvalId: string) => {
+  const handleInChatApprove = async (approvalId: string, isCritical = false) => {
     setIsProcessingApproval(true);
     try {
-      const res = await toolService.approveAction(approvalId, true);
+      const res = await toolService.approveAction(approvalId, true, undefined, isCritical);
       setApprovalStatus('approved');
       setApprovalResult(res.execution?.result || 'Executed successfully');
       onApprovalDecided?.();
@@ -340,7 +340,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
                     ) : (
                       <div className="flex items-center gap-2 pt-1">
                         <button
-                          onClick={() => handleInChatApprove(meta.approval_id)}
+                          onClick={() => handleInChatApprove(meta.approval_id, meta.permission_level === 'critical')}
                           disabled={isProcessingApproval}
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer transition-colors flex items-center gap-1 shadow-sm"
                         >

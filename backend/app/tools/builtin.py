@@ -12,29 +12,73 @@ from app.tools.schemas import PermissionLevel, ToolCategory, ExecutionEnvironmen
 WORKSPACE_STORAGE_DIR = Path(os.getcwd()) / "workspace_storage"
 WORKSPACE_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
+MAX_FILE_READ_BYTES = 5 * 1024 * 1024   # 5 MB read cap
+MAX_FILE_WRITE_BYTES = 5 * 1024 * 1024  # 5 MB write cap
+
 
 def _validate_safe_path(rel_or_abs_path: str) -> Path:
     """
     Strictly validates that the target file path resides within the sandboxed
-    workspace storage directory and prevents directory traversal attacks.
+    workspace storage directory and prevents directory traversal attacks,
+    symlink escapes, null-byte injection, and access to sensitive files.
     """
-    clean_path = Path(rel_or_abs_path).expanduser()
-    if not clean_path.is_absolute():
-        target = (WORKSPACE_STORAGE_DIR / clean_path).resolve()
-    else:
-        target = clean_path.resolve()
+    if not rel_or_abs_path or not str(rel_or_abs_path).strip():
+        raise PermissionError("Access denied: Target file path cannot be empty.")
 
+    # 1. Null-byte injection defense
+    if "\0" in str(rel_or_abs_path):
+        raise PermissionError("Access denied: Null byte in file path.")
+
+    workspace_root = WORKSPACE_STORAGE_DIR.resolve()
+    clean_path = Path(rel_or_abs_path).expanduser()
+
+    # 2. Check for symlinks in raw path before resolution
+    raw_path = (workspace_root / clean_path) if not clean_path.is_absolute() else clean_path
+    if os.path.islink(raw_path):
+        raise PermissionError("Access denied: Symlinks are prohibited in the sandboxed workspace.")
+
+    # 3. Resolve target
+    target = raw_path.resolve()
+
+    # 4. Check for symlinks on resolved target and in hierarchy
+    if os.path.islink(target):
+        raise PermissionError("Access denied: Symlinks are prohibited in the sandboxed workspace.")
+
+    curr = raw_path
+    while curr != workspace_root and curr.parent != curr:
+        if os.path.islink(curr):
+            raise PermissionError("Access denied: Symlinks in path hierarchy are prohibited.")
+        curr = curr.parent
+
+    # 5. Must reside strictly within workspace storage directory
     try:
-        # Must be within workspace storage directory
-        target.relative_to(WORKSPACE_STORAGE_DIR.resolve())
+        rel = target.relative_to(workspace_root)
     except ValueError:
         raise PermissionError(
             f"Access denied: Path '{rel_or_abs_path}' traverses outside the sandboxed workspace directory."
         )
 
-    # Block sensitive system file patterns
-    blocked_filenames = {".env", "id_rsa", "config.json", "credentials", "id_ed25519"}
-    if target.name.lower() in blocked_filenames or target.name.startswith(".env"):
+    # 6. Cannot target the root workspace directory itself
+    if target == workspace_root:
+        raise PermissionError("Access denied: Cannot perform file operations directly on the workspace root directory.")
+
+    # 7. Block sensitive directories and file patterns anywhere in the path hierarchy
+    forbidden_parts = {
+        ".git", ".env", ".ssh", ".aws", ".azure", ".kube",
+        ".gnupg", ".config", "node_modules", ".venv", "__pycache__"
+    }
+    for part in target.parts:
+        part_lower = part.lower()
+        if part_lower in forbidden_parts or part_lower.startswith(".env"):
+            raise PermissionError(f"Access denied: Access to sensitive path component '{part}' is strictly blocked.")
+
+    # 8. Block sensitive filenames
+    blocked_filenames = {
+        ".env", "id_rsa", "id_ed25519", "id_dsa", "id_ecdsa",
+        "credentials", "config.json", "id_rsa.pub", ".bash_history",
+        "known_hosts", "authorized_keys"
+    }
+    if target.name.lower() in blocked_filenames or target.name.lower().startswith(".env"):
         raise PermissionError(f"Access denied: Access to sensitive file '{target.name}' is strictly blocked.")
 
     return target
@@ -273,13 +317,24 @@ class FileReaderTool(BaseTool):
         if not safe_path.is_file():
             raise ValueError(f"Path is not a regular file: {file_path}")
 
+        file_size = safe_path.stat().st_size
+        if file_size > MAX_FILE_READ_BYTES:
+            raise ValueError(
+                f"File size ({file_size} bytes) exceeds maximum allowable read limit of {MAX_FILE_READ_BYTES} bytes."
+            )
+
         with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
-            lines = [f.readline() for _ in range(max_lines)]
+            lines = []
+            for _ in range(max_lines):
+                line = f.readline(65536)  # Bound line read length
+                if not line:
+                    break
+                lines.append(line)
             content = "".join(lines)
 
         return {
             "file_path": str(safe_path.name),
-            "size_bytes": safe_path.stat().st_size,
+            "size_bytes": file_size,
             "lines_read": len(lines),
             "content": content,
         }
@@ -379,6 +434,18 @@ class FileWriterTool(BaseTool):
 
     async def run(self, file_path: str, content: str, mode: str = "overwrite", **kwargs) -> Dict[str, Any]:
         safe_path = _validate_safe_path(file_path)
+        content_bytes = content.encode("utf-8")
+        if len(content_bytes) > MAX_FILE_WRITE_BYTES:
+            raise ValueError(
+                f"Content size ({len(content_bytes)} bytes) exceeds maximum write limit of {MAX_FILE_WRITE_BYTES} bytes."
+            )
+
+        if mode == "append" and safe_path.exists():
+            if safe_path.stat().st_size + len(content_bytes) > MAX_FILE_WRITE_BYTES:
+                raise ValueError(
+                    f"Resulting file size would exceed maximum write limit of {MAX_FILE_WRITE_BYTES} bytes."
+                )
+
         write_mode = "a" if mode == "append" else "w"
 
         with open(safe_path, write_mode, encoding="utf-8") as f:
@@ -386,7 +453,7 @@ class FileWriterTool(BaseTool):
 
         return {
             "file_path": str(safe_path.name),
-            "bytes_written": len(content.encode("utf-8")),
+            "bytes_written": len(content_bytes),
             "mode": mode,
             "status": "written_successfully",
         }
@@ -433,6 +500,9 @@ class FileDeleterTool(BaseTool):
 
     async def run(self, file_path: str, **kwargs) -> Dict[str, Any]:
         safe_path = _validate_safe_path(file_path)
+        if safe_path.name in {".gitkeep", ".gitignore"}:
+            raise PermissionError(f"Cannot delete protected infrastructure file: {safe_path.name}")
+
         if not safe_path.exists():
             raise FileNotFoundError(f"Cannot delete: File '{file_path}' does not exist.")
         if not safe_path.is_file():

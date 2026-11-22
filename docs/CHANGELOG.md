@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.1] - 2026-11-22 - Phase 3.1: Tool Execution Security Hardening & Real MCP Validation
+
+### Added
+- **Single-Use Approval Enforcement & Replay Defense**:
+  - Added `is_executed`, `executed_at`, and `requested_by` columns to `tool_approvals` table via Alembic migration `007_approval_security_hardening.py`.
+  - Implemented atomic execution claiming via `ApprovalManager.mark_approval_executed`.
+  - Approvals cannot be executed more than once; concurrent execution attempts are safely rejected.
+- **Explicit Critical Action Confirmation Gate**:
+  - `ApprovalDecisionRequest` now requires `confirm_critical: bool = True` for Level 3 Critical actions (e.g. `file_deleter`), preventing accidental approval of destructive tasks.
+- **User Ownership & Authorization Enforcement**:
+  - Verified user identity in `approve`, `reject`, and `cancel`, preventing cross-user approval tampering (`SecurityException`).
+- **Filesystem Sandbox Hardening**:
+  - Added null-byte injection rejection and symlink detection in `_validate_safe_path`.
+  - Blocked directory hierarchy traversal across `.git`, `.ssh`, `.env`, `.aws`, `.azure`, `node_modules`, `.venv`.
+  - Enforced 5MB read limit (`MAX_FILE_READ_BYTES`) and 5MB write limit (`MAX_FILE_WRITE_BYTES`) to prevent memory exhaustion / DoS attacks.
+  - Protected root workspace directory and infrastructure files (`.gitkeep`, `.gitignore`) from unauthorized deletion.
+- **MCP Prompt Injection & Output Isolation**:
+  - `PromptInjectionGuard` enforces a 50KB payload limit (`MAX_OUTPUT_CHARS`) with truncation notices.
+  - Delimiter breakout defense: escapes `</tool_output>` inside output to prevent XML container escape.
+  - Sanitizes `<script>`, `<iframe>`, `javascript:`, `onerror=`, and system instruction override attempts.
+  - Structural isolation verified: `ToolPermissionEngine` evaluates permissions strictly via database rows, rejecting fake approval confirmations from tool outputs.
+- **Real Local MCP Server Integration Test Suite**:
+  - Created controlled real MCP test server (`backend/tests/mcp_test_server.py`) communicating over JSON-RPC stdio.
+  - Added `McpClient.initialize()` protocol handshake.
+  - Verified discovery, schema validation, tool registration, execution, timeout handling, connection failures, and malformed responses.
+- **Automated Security & Reliability Test Suite**:
+  - Added `backend/tests/test_phase3_security_and_reliability.py` with 29 comprehensive security and reliability tests covering approval replay, argument tampering, expiry, cancellation, concurrency races, path traversal, symlink escapes, large files, real MCP, prompt injection, and idempotency.
+  - Backend test suite expanded to **119 passing tests** (100% pass rate).
+
+---
+
 ## [0.5.0] - 2026-11-22 - Phase 3: Tool Execution & Human-in-the-Loop Approvals
 
 ### Added

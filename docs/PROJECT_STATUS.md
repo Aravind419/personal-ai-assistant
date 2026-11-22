@@ -6,19 +6,16 @@
 
 ## 1. Executive Summary
 
-- **Current Development Phase**: **Phase 3 (Tool Execution & Human-in-the-Loop Approvals) [0.5.0] — VERIFIED**
+- **Current Development Phase**: **Phase 3.1 (Tool Execution Security, Reliability & Real MCP Validation) [0.5.1] — VERIFIED**
 - **Next Development Phase**: **Phase 4 (Proactive Background Automations & OAuth Integrations) — NOT_STARTED**
-- **Overall Progress**: Phase 0, Phase 1, Multi-Model Architecture & Cost Controls, Phase 2 (Semantic Memory & Background Workers), Advanced Response Formatting & Voice Conversation System, Advanced Conversational Intelligence & Assistant Harness, and Phase 3 (Tool Execution & Human-in-the-Loop Approvals) are 100% complete and verified. Key features delivered in Phase 3:
-  - Centralized, provider-independent Tool Execution Engine (`ToolExecutionEngine`, `ToolRegistry`, `BaseTool`) supporting native tools, external APIs, and MCP servers.
-  - Three-tier permission architecture: Level 1 Safe (auto-executed), Level 2 Sensitive (explicit approval required), Level 3 Critical (explicit action-specific confirmation required).
-  - Human-in-the-loop approval management (`ApprovalManager`) with race-safe atomic state transitions (`UPDATE ... WHERE status='pending'`), dynamic expiration tracking, and canonical argument SHA-256 hash tamper detection.
-  - Model Context Protocol (MCP) client & server manager (`McpClient`, `McpServerManager`) with tool discovery, connection health tracking, and prompt injection defense (`PromptInjectionGuard`).
-  - Native safe and sensitive tools: `get_system_time`, `calculate`, `text_processor`, `json_validator`, `file_reader` (sandbox path-traversal protected), `file_searcher`, `file_writer` (sensitive write approval), `file_deleter` (critical delete confirmation).
-  - Multi-round conversational tool execution loop in Server-Sent Events (SSE) streaming chat (`stream_chat`) with tool notices, buffer resets, and safe iteration limits.
-  - Frontend interactive Approvals Dashboard (`ApprovalsView.tsx`) with status filtering, confirmation dialogs, and detail inspection.
-  - Frontend Tool Execution Hub (`ToolsView.tsx`) with registered tool catalog, test runner, execution history logs, and MCP server configuration.
-  - Interactive in-chat Approval Cards in `ChatMessage.tsx` allowing one-click approval and execution directly inside the conversation thread.
-  - Real automated test suite with **90 passing backend pytest tests** (100% pass rate), 0 TypeScript/build errors, and end-to-end browser verification via Playwright MCP.
+- **Overall Progress**: Phase 0, Phase 1, Multi-Model Architecture & Cost Controls, Phase 2 (Semantic Memory & Background Workers), Advanced Response Formatting & Voice Conversation System, Advanced Conversational Intelligence & Assistant Harness, Phase 3 (Tool Execution & Human-in-the-Loop Approvals), and Phase 3.1 (Security Hardening & Real MCP Validation) are 100% complete and verified. Key features delivered in Phase 3.1:
+  - Single-use approval enforcement via atomic execution claim (`mark_approval_executed`), preventing replay attacks and double execution.
+  - Mandatory explicit confirmation (`confirm_critical=true`) for Level 3 Critical actions (e.g. `file_deleter`).
+  - User boundary enforcement preventing cross-user approval tampering (`requested_by` vs `decided_by`).
+  - Filesystem sandbox hardening: null-byte injection rejection, symlink escape checks in hierarchy, directory-part traversal blocks (`.git`, `.ssh`, `.env`, `.aws`, `.azure`, `node_modules`, `.venv`), infrastructure deletion protection (`.gitkeep`), and 5MB I/O read/write resource caps.
+  - Prompt Injection & DoS defense: 50KB payload truncation, delimiter breakout defense (`</tool_output>` escaping), HTML/script sanitization, and server-side permission independence.
+  - Real local stdio and HTTP MCP server verification: initialization handshake, discovery, schema validation, registration, execution, timeout handling, connection failures, and malformed responses.
+  - Automated test suite expanded to **119 passing backend pytest tests** (100% pass rate), 0 TypeScript/build errors, and Playwright MCP browser verification.
 
 ---
 
@@ -128,22 +125,25 @@
   rootdir: D:\personal-ai-assistent\backend
   collected 71 items
 
-  backend\tests\test_assistant_intelligence.py ..............              [ 19%]
-  backend\tests\test_chat_stream.py .                                      [ 21%]
-  backend\tests\test_config.py ...                                         [ 25%]
-  backend\tests\test_conversations.py .                                    [ 26%]
-  backend\tests\test_exceptions.py ..                                      [ 29%]
-  backend\tests\test_health.py ....                                        [ 35%]
-  backend\tests\test_memory.py ...                                         [ 39%]
-  backend\tests\test_memory_intelligence.py ............                   [ 56%]
-  backend\tests\test_model_registry.py ........                            [ 67%]
-  backend\tests\test_providers.py ....                                     [ 78%]
-  backend\tests\test_security.py ...                                       [ 82%]
-  backend\tests\test_tasks.py .....                                        [ 87%]
-  backend\tests\test_tools.py ....                                         [ 92%]
+  backend\tests\test_assistant_intelligence.py ..............              [ 11%]
+  backend\tests\test_chat_stream.py .                                      [ 12%]
+  backend\tests\test_config.py ...                                         [ 15%]
+  backend\tests\test_conversations.py .                                    [ 15%]
+  backend\tests\test_exceptions.py ..                                      [ 17%]
+  backend\tests\test_health.py ....                                        [ 21%]
+  backend\tests\test_memory.py ...                                         [ 23%]
+  backend\tests\test_memory_intelligence.py ............                   [ 33%]
+  backend\tests\test_model_registry.py ........                            [ 40%]
+  backend\tests\test_phase3_security_and_reliability.py .................. [ 55%]
+  ...........                                                              [ 64%]
+  backend\tests\test_phase3_tools_and_approvals.py ...................     [ 80%]
+  backend\tests\test_providers.py ....                                     [ 84%]
+  backend\tests\test_security.py ...                                       [ 86%]
+  backend\tests\test_tasks.py .....                                        [ 90%]
+  backend\tests\test_tools.py ....                                         [ 94%]
   backend\tests\test_voice.py .......                                      [100%]
 
-  ============================= 90 passed in 6.19s ==============================
+  ======================= 119 passed, 1 warning in 9.57s ========================
   ```
 
 ### Frontend Build Results
@@ -154,8 +154,8 @@
   ✓ 2410 modules transformed.
   dist/index.html                   0.46 kB │ gzip:   0.31 kB
   dist/assets/index-CQaS8zTv.css   84.05 kB │ gzip:  12.91 kB
-  dist/assets/index-C_UZekBS.js   602.25 kB │ gzip: 163.73 kB
-  ✓ built in 677ms
+  dist/assets/index-Crbd2Z-I.js   602.37 kB │ gzip: 163.79 kB
+  ✓ built in 4.71s
   ```
 
 ---

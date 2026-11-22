@@ -144,6 +144,7 @@ class ToolExecutionEngine:
                     target_resource=tool.extract_target_resource(arguments),
                     expected_consequences=tool.build_consequence_summary(arguments),
                     conversation_id=conversation_id,
+                    requested_by=user_identity,
                     db=db,
                 )
 
@@ -184,6 +185,24 @@ class ToolExecutionEngine:
         exec_id = str(uuid.uuid4())
         execution_record = None
         if db:
+            if approval:
+                # Atomically claim the approval so it can never be executed twice
+                try:
+                    await ApprovalManager.mark_approval_executed(approval.id, exec_id, db)
+                except ValidationException as claim_err:
+                    return ToolExecutionResponse(
+                        id=exec_id,
+                        tool_id=tool.id,
+                        tool_name=tool.name,
+                        status=ExecutionStatus.FAILED,
+                        success=False,
+                        error=str(claim_err.message),
+                        approval_id=approval.id,
+                        approval_required=False,
+                        started_at=now,
+                        completed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+
             execution_record = ToolExecution(
                 id=exec_id,
                 conversation_id=conversation_id,

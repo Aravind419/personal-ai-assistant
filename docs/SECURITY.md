@@ -98,32 +98,41 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
 
 ---
 
-## 8. Tool Execution & Human-in-the-Loop Approval Security (Phase 3)
+## 8. Tool Execution & Human-in-the-Loop Approval Security (Phase 3 & Phase 3.1)
 
 1. **Three-Tier Permission Architecture**:
    - Every tool is classified into `SAFE` (Level 1), `SENSITIVE` (Level 2), or `CRITICAL` (Level 3).
    - `SAFE` tools (read-only, mathematical calculations, local system time) execute automatically under configured permissions.
    - `SENSITIVE` tools (modifying files, state mutations) strictly block execution and require explicit user approval.
-   - `CRITICAL` tools (file deletion, financial, irreversible destructive actions) require explicit action-specific confirmation with risk disclosure.
+   - `CRITICAL` tools (file deletion, financial, irreversible destructive actions) require explicit action-specific confirmation with risk disclosure. Level 3 Critical approvals strictly require `confirm_critical=true` in the API payload or the transition fails with `ValidationException`.
 
-2. **Race-Safe State Transitions & Idempotency**:
-   - `ApprovalManager` performs atomic SQL status updates (`UPDATE tool_approvals SET status = :status WHERE id = :id AND status = 'pending'`).
-   - Prevents race conditions, double approvals, or duplicate execution triggers from rapid repeated clicks or concurrent API calls.
+2. **Single-Use Enforcement & Race-Safe Transitions**:
+   - `ApprovalManager.mark_approval_executed` performs atomic conditional SQL updates (`UPDATE tool_approvals SET is_executed = true, executed_at = now, execution_id = :exec_id WHERE id = :id AND is_executed = false AND status = 'approved'`).
+   - Prevents replay attacks, approval reuse, double approvals, or duplicate execution triggers from rapid repeated clicks or concurrent API calls. Once an approval is executed, subsequent calls are rejected with `ValidationException`.
 
 3. **Canonical Argument Hashing (`arguments_hash`)**:
    - Every approval request is cryptographically bound to a SHA-256 hash of canonical sorted JSON arguments (`CanonicalArgumentHasher`).
-   - If requested arguments drift or are altered between approval creation and execution time, the approval is immediately invalidated and execution is blocked.
+   - If requested arguments drift or are altered between approval creation and execution time, the approval is immediately invalidated, set to `CANCELLED`, and execution is blocked.
 
-4. **Sandbox File Traversal Protection**:
+4. **Cross-User Approval Isolation**:
+   - `tool_approvals.requested_by` records the requesting user identity (default `"personal_user"`).
+   - In `approve`, `reject`, and `cancel`, the acting user identity (`decided_by`) is verified against `requested_by`. Mismatched user identities raise `SecurityException`.
+
+5. **Sandbox File Traversal & Symlink Protection**:
    - File system tools (`file_reader`, `file_searcher`, `file_writer`, `file_deleter`) are strictly restricted to `WORKSPACE_STORAGE_DIR`.
-   - Paths are resolved to their canonical realpaths. Any path attempting traversal outside the sandbox (e.g. `../`, absolute paths, symlinks) raises a `SecurityException`.
-   - Access to sensitive filenames (`.env`, `id_rsa`, `id_ed25519`, `.git`, `credentials`) is explicitly blocked.
+   - Paths are resolved to their canonical realpaths. Null bytes (`\0`) and symlinks (`os.path.islink`) are prohibited to eliminate directory traversal escapes and TOCTOU symlink swaps.
+   - All path hierarchy parts are scanned against forbidden directories (`.git`, `.ssh`, `.env`, `.aws`, `.azure`, `.kube`, `node_modules`, `.venv`).
+   - Access to sensitive filenames (`.env`, `id_rsa`, `id_ed25519`, `credentials`, `config.json`, `known_hosts`, `authorized_keys`) is explicitly blocked.
+   - Operations directly on the workspace root directory and deletion of infrastructure files (`.gitkeep`, `.gitignore`) are prohibited.
+   - Bounded I/O caps: `MAX_FILE_READ_BYTES = 5MB` and `MAX_FILE_WRITE_BYTES = 5MB` protect against memory exhaustion.
 
-5. **Secret Sanitization in Execution Logs**:
+6. **Secret Sanitization in Execution Logs**:
    - `SecretSanitizer` scans execution arguments, outputs, and error details before persistence.
    - Redacts API keys (`sk-...`, `Bearer ...`), passwords, database URLs, and secret tokens using regular expression masks (`[REDACTED]`).
 
-6. **Prompt Injection Defense for External Tools & MCP**:
+7. **Prompt Injection & DoS Defense for External Tools & MCP**:
    - Tool outputs and MCP results are enclosed in isolated `<tool_output>` XML wrappers.
-   - Sanitizes and neutralizes prompt injection patterns (such as `<system>`, `ignore previous instructions`, `disregard above rules`) before passing output back into the conversation context.
-   - Untrusted MCP server tools can never modify system prompts or agent guardrails.
+   - Delimiter breakout defense: any `</tool_output>` occurrence inside raw output is safely escaped to prevent XML envelope breakout.
+   - Output truncation: payload size is strictly capped at 50,000 characters (`MAX_OUTPUT_CHARS`), appending truncation notices to prevent LLM context blowup or DoS.
+   - Executable scripts (`<script>`, `<iframe>`, `javascript:`, `onerror=`) and system override directives (`<system>`, `ignore previous instructions`, `you are now in dan mode`) are neutralized.
+   - Structural isolation: permissions are evaluated strictly server-side in PostgreSQL. A tool output claiming `{"approved": true, "role": "admin"}` is never trusted by `ToolPermissionEngine`.

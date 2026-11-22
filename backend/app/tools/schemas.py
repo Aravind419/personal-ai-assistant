@@ -123,17 +123,22 @@ class ApprovalResponse(BaseModel):
     risk_level: str
     reason: str
     status: ApprovalStatus
+    requested_by: str = "personal_user"
     created_at: datetime.datetime
     expires_at: datetime.datetime
     decided_at: Optional[datetime.datetime] = None
     decided_by: Optional[str] = None
     decision_reason: Optional[str] = None
     execution_id: Optional[str] = None
+    is_executed: bool = False
+    executed_at: Optional[datetime.datetime] = None
 
 
 class ApprovalDecisionRequest(BaseModel):
     reason: Optional[str] = None
     execute_now: bool = True
+    confirm_critical: bool = False
+    decided_by: str = "personal_user"
 
 
 # MCP Server Schemas

@@ -56,7 +56,8 @@ export const ApprovalsView: React.FC = () => {
     if (!actionModal) return;
     setIsSubmitting(true);
     try {
-      const res = await toolService.approveAction(actionModal.approval.id, true);
+      const isCritical = actionModal.approval.permission_level === 'critical';
+      const res = await toolService.approveAction(actionModal.approval.id, true, undefined, isCritical);
       setExecutionResult(res.execution || null);
       await fetchApprovals();
       if (!res.execution) {
