@@ -3,10 +3,11 @@
 ## 1. Project Purpose & Vision
 
 The **Personal AI Assistant** is an autonomous, production-grade AI system designed specifically for a **single personal user**. Unlike general multi-tenant chat software, this project prioritizes:
-- **Persistent Personal Memory**: Lifelong knowledge extraction, semantic recall, and contextual awareness of user preferences, history, and active projects.
-- **Deterministic Tool Execution**: Reliable interaction with local and cloud APIs, filesystem operations, and external services with human-in-the-loop guardrails for sensitive actions.
-- **Background Proactive Automation**: Asynchronous background workers capable of executing recurring tasks, system monitoring, and automated briefings without requiring constant active chat prompting.
-- **Hybrid Deployment Model**: Seamless combination of local development (Docker, Python, Node, pgvector) with modern cloud model APIs (e.g. OpenAI).
+- **Persistent Personal Memory**: Lifelong knowledge extraction, semantic recall, and contextual awareness of user preferences, history, and active projects (Phase 2).
+- **Deterministic Tool Execution**: Reliable interaction with local and cloud APIs, filesystem operations, and external services with human-in-the-loop guardrails for sensitive actions (Phase 3).
+- **Background Proactive Automation**: Asynchronous background workers capable of executing recurring tasks, system monitoring, and automated briefings without requiring constant active chat prompting (Phase 2/4).
+- **Provider-Independent Multi-Model Intelligence**: Modular adapter-based AI layer supporting free and paid models without vendor lock-in, with strict Free-Only guardrails, fallback chains, and transparent token cost tracking.
+- **Hybrid Deployment Model**: Seamless combination of local development (Docker PostgreSQL + pgvector, Python 3.13, Node 24) with external API gateways (OpenRouter active; NVIDIA NIM & local Ollama stubs prepared).
 
 ---
 
@@ -15,13 +16,13 @@ The **Personal AI Assistant** is an autonomous, production-grade AI system desig
 | Capability | Purpose & Description | Target Phase |
 |---|---|---|
 | **Diagnostic Foundation** | Production-ready FastAPI + React shell with health and DB latency probes | Phase 0 (VERIFIED) |
-| **Conversational Agent Engine** | Streaming chat interface with LangGraph state machine and OpenAI provider abstraction | Phase 1 (Next) |
-| **Activity Logging & Settings** | Structured audit trail of system events, agent thoughts, and configuration controls | Phase 1 |
-| **Semantic Long-Term Memory** | Automatic memory extraction and vector search via PostgreSQL `pgvector` | Phase 2 |
-| **Background Task Workers** | Asynchronous task scheduling and proactive routines powered by Redis and Celery | Phase 2 |
-| **Tool & Skill Registry** | Extensible tool ecosystem with parameter validation and MCP server bridging | Phase 3 |
-| **Human-in-the-Loop Approvals** | Granular approval workflow before executing destructive or high-impact actions | Phase 3 |
-| **Third-Party Integrations** | OAuth and webhook connectors for calendars, email, and cloud services | Phase 4 |
+| **Conversational Agent Engine** | Streaming chat interface with persistent conversations and provider abstraction | Phase 1 (VERIFIED) |
+| **Multi-Model & Cost Controls** | Central model registry, Free-Only mode, automated fallback chains, and telemetry | Phase 1 (VERIFIED) |
+| **Semantic Long-Term Memory** | Automatic memory extraction and vector search via PostgreSQL `pgvector` | Phase 2 (Next - NOT_STARTED) |
+| **Background Task Workers** | Asynchronous task scheduling and proactive routines powered by Redis and Celery | Phase 2 (Next - NOT_STARTED) |
+| **Tool & Skill Registry Expansion** | Extensible tool ecosystem with parameter validation and MCP server bridging | Phase 3 (NOT_STARTED) |
+| **Human-in-the-Loop Approvals** | Granular approval workflow before executing destructive or high-impact actions | Phase 3 (NOT_STARTED) |
+| **Third-Party Integrations** | OAuth and webhook connectors for calendars, email, and cloud services | Phase 4 (NOT_STARTED) |
 
 ---
 
@@ -46,14 +47,16 @@ The **Personal AI Assistant** is an autonomous, production-grade AI system desig
 - **Runtime**: Python 3.13
 - **Data Validation & Settings**: Pydantic v2 & Pydantic Settings
 - **Server**: Uvicorn
+- **AI Engine**: Provider-independent adapter architecture (`BaseLLMProvider`), dynamic `ProviderRegistry`, Central Model Registry (100+ models), OpenRouter adapter, SSE streaming
 
 ### Database & Storage
-- **Primary Database**: PostgreSQL 16
-- **Vector Search Engine**: `pgvector` (Extension pre-configured in Alembic migrations)
-- **ORM & Drivers**: SQLAlchemy 2.0 (AsyncIO), `asyncpg`, `psycopg`
+- **Primary Database**: PostgreSQL 16 (Local Docker container: `pgvector/pgvector:pg16`)
+- **Vector Search Engine**: `pgvector` (Extension hook configured in Alembic migrations)
+- **ORM & Drivers**: SQLAlchemy 2.0 (AsyncIO, NullPool), `asyncpg`, `psycopg`
 - **Schema Migrations**: Alembic
 
-### Infrastructure & Tooling
+### Infrastructure & Planned Tooling
 - **Containerization**: Docker Compose (`pgvector/pgvector:pg16`)
+- **Background Workers**: Redis + Celery (Planned for Phase 2)
 - **Package Management**: `uv` / `pip` for Python, `npm` for Node.js
 - **Testing**: Pytest, pytest-asyncio, httpx, Playwright MCP

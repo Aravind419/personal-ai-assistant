@@ -70,7 +70,7 @@
 - **Features in Progress**: None (Phase 1 cleanly completed; Phase 2 not yet started).
 - **Features Not Yet Started**: Phase 2 through Phase 4 deliverables.
 - **Pending Provider Integrations**: NVIDIA NIM and Ollama (adapters prepared in architecture; complete integrations pending in future provider milestone).
-- **Known Bugs & Errors**: None. All 22 backend tests and Vite frontend build pass.
+- **Known Bugs & Errors**: None. All 30 backend tests pass (100% pass rate) and Vite frontend build succeeds with 0 errors.
 - **Git Commit**: Clean working directory on `main` branch.
 
 ---
@@ -78,26 +78,26 @@
 ## 5. Verification Test & Build Results
 
 ### Backend Test Results
-- **Command**: `backend\.venv\Scripts\pytest backend`
+- **Command**: `backend\.venv\Scripts\pytest backend -v`
 - **Output**:
   ```
   platform win32 -- Python 3.13.5, pytest-9.2.0, pluggy-1.7.0
   rootdir: D:\personal-ai-assistent\backend
   configfile: pyproject.toml
-  testpaths: tests
   plugins: anyio-4.16.0, asyncio-1.5.0
-  collected 22 items
+  collected 30 items
 
-  tests\test_chat_stream.py .                                              [  4%]
-  tests\test_config.py ...                                                 [ 18%]
-  tests\test_conversations.py .                                            [ 22%]
-  tests\test_exceptions.py ..                                              [ 31%]
-  tests\test_health.py ....                                                [ 50%]
-  tests\test_providers.py ....                                             [ 68%]
-  tests\test_security.py ...                                               [ 81%]
+  tests\test_chat_stream.py .                                              [  3%]
+  tests\test_config.py ...                                                 [ 13%]
+  tests\test_conversations.py .                                            [ 16%]
+  tests\test_exceptions.py ..                                              [ 23%]
+  tests\test_health.py ....                                                [ 36%]
+  tests\test_model_registry.py ........                                    [ 63%]
+  tests\test_providers.py ....                                             [ 76%]
+  tests\test_security.py ...                                               [ 86%]
   tests\test_tools.py ....                                                 [100%]
 
-  ============================= 22 passed in 1.71s ==============================
+  ============================= 30 passed in 0.86s ==============================
   ```
 
 ### Frontend Build Results
@@ -105,12 +105,11 @@
 - **Output**:
   ```
   vite v8.3.8 building client environment for production...
-  transforming...
-  ✓ 2304 modules transformed.
+  ✓ 2305 modules transformed.
   dist/index.html                   0.46 kB │ gzip:   0.31 kB
-  dist/assets/index-C0bRQG0i.css   46.65 kB │ gzip:   7.98 kB
-  dist/assets/index-D07LyT4-.js   408.46 kB │ gzip: 123.05 kB
-  ✓ built in 1.34s
+  dist/assets/index-DKnXKK4A.css   50.83 kB │ gzip:   8.62 kB
+  dist/assets/index-CUs_QNVW.js   428.76 kB │ gzip: 126.77 kB
+  ✓ built in 567ms
   ```
 
 ---
