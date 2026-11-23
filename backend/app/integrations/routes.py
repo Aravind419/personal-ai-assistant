@@ -442,7 +442,7 @@ async def send_test_email(
 
     try:
         client = GoogleApiClient(token)
-        res = await client.gmail_send_message(to=clean_email, subject=subj, body_text=body)
+        res = await client.gmail_send_message(to=clean_email, subject=subj, body=body, body_text=body)
         
         # Log to SyncLog for auditing
         conn = await IntegrationManager.get_connection(db, "google")

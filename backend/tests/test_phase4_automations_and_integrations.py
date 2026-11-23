@@ -430,6 +430,30 @@ async def test_gmail_send_test_validation_and_preview():
             assert res.json()["preview"] is True
             assert res.json()["confirmation_required"] is True
 
+        # Test confirm=True execution with mocked Gmail sending
+        with patch("app.integrations.routes.IntegrationManager.get_valid_access_token", new_callable=AsyncMock) as mock_tok, \
+             patch("app.integrations.google_client.GoogleApiClient.gmail_send_message", new_callable=AsyncMock) as mock_send, \
+             patch("app.integrations.routes.IntegrationManager.get_connection", new_callable=AsyncMock) as mock_conn:
+            mock_tok.return_value = "ya29.mock_valid_token"
+            mock_send.return_value = {"id": "18f921ab93", "threadId": "18f921ab93"}
+            mock_conn.return_value = None
+
+            send_res = await client.post(
+                "/api/v1/integrations/google_gmail/send-test",
+                json={
+                    "recipient_email": "contactakvora@gmail.com",
+                    "confirm": True,
+                    "subject": "personal ai assistent testing",
+                    "body_text": "testing",
+                },
+            )
+            assert send_res.status_code == 200
+            data = send_res.json()
+            assert data["status"] == "sent"
+            assert data["preview"] is False
+            assert data["message_id"] == "18f921ab93"
+            mock_send.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 async def test_mcp_server_test_endpoint():

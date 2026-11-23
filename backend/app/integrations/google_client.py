@@ -164,11 +164,19 @@ class GoogleApiClient:
                 raise RuntimeError(f"Gmail list_labels failed ({resp.status_code}): {resp.text}")
             return resp.json().get("labels", [])
 
-    async def gmail_create_draft(self, to: str, subject: str, body: str, thread_id: Optional[str] = None) -> Dict[str, Any]:
+    async def gmail_create_draft(
+        self,
+        to: str,
+        subject: str,
+        body: Optional[str] = None,
+        body_text: Optional[str] = None,
+        thread_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        content = body_text if body_text is not None else (body or "")
         msg = EmailMessage()
         msg["To"] = to
         msg["Subject"] = subject
-        msg.set_content(body)
+        msg.set_content(content)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("UTF-8")
         payload: Dict[str, Any] = {"message": {"raw": raw}}
@@ -182,11 +190,19 @@ class GoogleApiClient:
                 raise RuntimeError(f"Gmail create_draft failed ({resp.status_code}): {resp.text}")
             return resp.json()
 
-    async def gmail_send_message(self, to: str, subject: str, body: str, thread_id: Optional[str] = None) -> Dict[str, Any]:
+    async def gmail_send_message(
+        self,
+        to: str,
+        subject: str,
+        body: Optional[str] = None,
+        body_text: Optional[str] = None,
+        thread_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        content = body_text if body_text is not None else (body or "")
         msg = EmailMessage()
         msg["To"] = to
         msg["Subject"] = subject
-        msg.set_content(body)
+        msg.set_content(content)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("UTF-8")
         payload: Dict[str, Any] = {"raw": raw}
