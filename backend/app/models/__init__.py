@@ -6,6 +6,14 @@ from app.models.model_policy import AIModelPolicy, ModelExecutionMetric
 from app.models.memory import Memory
 from app.models.task import BackgroundTask
 from app.models.tool import ToolApproval, ToolExecution, McpServerConfiguration
+from app.models.automation import (
+    Automation,
+    AutomationExecution,
+    IntegrationConnection,
+    IntegrationSyncLog,
+    Notification,
+    Briefing,
+)
 
 __all__ = [
     "Base",
@@ -21,4 +29,10 @@ __all__ = [
     "ToolApproval",
     "ToolExecution",
     "McpServerConfiguration",
+    "Automation",
+    "AutomationExecution",
+    "IntegrationConnection",
+    "IntegrationSyncLog",
+    "Notification",
+    "Briefing",
 ]

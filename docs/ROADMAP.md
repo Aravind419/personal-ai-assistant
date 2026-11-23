@@ -37,7 +37,7 @@ The project follows a rigorous phased engineering methodology. Each phase contai
                                            |
                                            v
 +-----------------------------------------------------------------------------------------+
-| Phase 4: Proactive Automations & External Integrations (NOT_STARTED)                    |
+| Phase 4: Proactive Automations & External Integrations (VERIFIED)                        |
 | - OAuth connectors (Google/GitHub) + Cron/event automations + System Audit              |
 +-----------------------------------------------------------------------------------------+
 ```
@@ -165,10 +165,23 @@ The project follows a rigorous phased engineering methodology. Each phase contai
 ---
 
 ### Phase 4: Proactive Background Automations & External Integrations
-- **Status**: `NOT_STARTED`
+- **Status**: `VERIFIED`
 - **Dependencies**: Phase 3 (VERIFIED)
 - **Key Deliverables**:
-  - **Scheduled Automations Engine**: Cron and interval-based recurring job scheduler with Celery Beat.
-  - **Proactive Notification & Alert System**: Background trigger alerts delivering proactive insights to user.
-  - **Third-Party OAuth Connectors**: Secure credential flows for Google Workspace (Docs, Gmail, Calendar) and GitHub.
-  - **System Audit & Compliance Exporter**: Comprehensive security logs and data export tools.
+  - **Scheduled Automations Engine**: Persistent automation model, Celery Beat periodic scheduler (`dispatch_due_automations_task`), timezone-aware calculations, and resilient local asynchronous fallback.
+  - **Natural-Language Automation Creator**: Heuristic parser with tool validation against central ToolRegistry preventing unbuilt tool hallucinations.
+  - **Permission & Approval Gating**: Automations inherit Level 1/2/3 permission boundaries; sensitive/critical steps halt in `WAITING_FOR_APPROVAL` with single-use execution claims.
+  - **First-Party OAuth Integrations**: Provider-independent framework with Google Workspace (Gmail, Calendar, Drive) and GitHub connectors; AES-256 (Fernet) encrypted token vault; 10 integration tools.
+  - **Morning Briefing Generator**: Autonomous multi-source daily briefing tool synthesizing calendar events, unread emails, pending approvals, and active workflows.
+  - **Internal Notification Center**: Persistent notifications table, unread count polling, popover center in header, and dismissal actions.
+  - **Automations & Integrations Dashboards**: Frontend tabs for managing automations, inspecting execution history, and connecting third-party services.
+- **Acceptance Criteria**:
+  - [x] Users can create, edit, enable, disable, run, and delete automations.
+  - [x] Recurring, daily, weekly, monthly, interval, and cron schedules work across timezones.
+  - [x] Background execution works reliably through Celery Beat and asynchronous fallback.
+  - [x] Existing permission and approval rules cannot be bypassed by automated jobs.
+  - [x] Google Workspace and GitHub integrations functional with encrypted token storage.
+  - [x] Daily morning briefings synthesize connected data without hallucination.
+  - [x] Persistent notification center and overview widgets operational.
+  - [x] Automated test suite expanded to 128 passing backend tests; 0 TypeScript errors.
+

@@ -70,7 +70,7 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     iconName: 'Plug',
     description: 'External service accounts, OAuth providers, and cloud connectors.',
     phasePlanned: 'Phase 4',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'automations',
@@ -78,7 +78,7 @@ export const NAVIGATION_ITEMS: NavItemConfig[] = [
     iconName: 'Zap',
     description: 'Background cron jobs, event-driven reactive pipelines, and proactive triggers.',
     phasePlanned: 'Phase 4',
-    isImplementedInPhase0: false,
+    isImplementedInPhase0: true,
   },
   {
     id: 'approvals',

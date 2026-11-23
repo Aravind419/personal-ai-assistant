@@ -26,6 +26,14 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
+# Celery Beat Periodic Schedule
+celery_app.conf.beat_schedule = {
+    "dispatch-due-automations-every-minute": {
+        "task": "app.tasks.celery_app.dispatch_due_automations_task",
+        "schedule": 60.0,
+    },
+}
+
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=5)
 def extract_memory_celery_task(
@@ -170,3 +178,56 @@ def reindex_embeddings_celery_task(self, db_task_id: str):
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc)
         raise exc
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=15)
+def run_automation_celery_task(
+    self,
+    execution_id: str,
+    approval_id: Optional[str] = None,
+    force_skip_approval: bool = False,
+):
+    """
+    Celery worker task to execute an automation workflow.
+    """
+    async def _run():
+        from app.database.session import async_session_factory
+        from app.automations.executor import AutomationExecutor
+
+        async with async_session_factory() as session:
+            exec_res = await AutomationExecutor.execute(
+                execution_id=execution_id,
+                db=session,
+                approval_id=approval_id,
+                force_skip_approval=force_skip_approval,
+            )
+            return {"status": exec_res.status, "duration_ms": exec_res.duration_ms}
+
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:
+        logger.warning(f"Automation execution {execution_id} error on attempt {self.request.retries + 1}: {exc}")
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=15 * (2 ** self.request.retries))
+        raise exc
+
+
+@celery_app.task
+def dispatch_due_automations_task():
+    """
+    Periodic beat task to find all due automations and dispatch executions.
+    """
+    async def _run():
+        from app.database.session import async_session_factory
+        from app.automations.service import AutomationService
+
+        async with async_session_factory() as session:
+            dispatched = await AutomationService.dispatch_due_automations(session)
+            return {"dispatched": len(dispatched)}
+
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:
+        logger.error(f"Failed to dispatch due automations: {exc}")
+        return {"error": str(exc)}
+

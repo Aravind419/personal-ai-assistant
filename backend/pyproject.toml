@@ -17,6 +17,7 @@ dependencies = [
     "cryptography>=43.0.0",
     "python-dotenv>=1.0.1",
     "jsonschema>=4.23.0",
+    "croniter>=2.0.0",
 ]
 
 [project.optional-dependencies]

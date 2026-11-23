@@ -8,6 +8,8 @@ import { TasksView } from './pages/TasksView';
 import { ApprovalsView } from './pages/ApprovalsView';
 import { ToolsView } from './pages/ToolsView';
 import { ActivityLogsView } from './pages/ActivityLogsView';
+import { AutomationsView } from './pages/AutomationsView';
+import { IntegrationsView } from './pages/IntegrationsView';
 import { PlaceholderView } from './components/common/PlaceholderView';
 import { NAVIGATION_ITEMS } from './components/layout/Sidebar';
 import type { NavTabId } from './types/navigation';
@@ -80,6 +82,10 @@ export function App() {
         return <ApprovalsView />;
       case 'activity_logs':
         return <ActivityLogsView />;
+      case 'automations':
+        return <AutomationsView />;
+      case 'integrations':
+        return <IntegrationsView />;
       case 'settings':
         return <SettingsView />;
       default:

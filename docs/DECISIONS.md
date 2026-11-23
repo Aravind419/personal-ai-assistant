@@ -224,3 +224,64 @@ This document records key technical and architectural decisions, the context in 
   - Prevents argument tampering and approval reuse attacks.
   - Comprehensive audit trail persisted in `tool_approvals` and `tool_executions`.
 
+---
+
+## ADR-018: Proactive Automation Execution & Scheduling Engine via Celery Beat with Resilient Asynchronous Fallback
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Transforming the assistant from a purely reactive chatbot into a proactive assistant requires persistent, recurring, and timezone-aware automations (e.g. daily briefings at 8:00 AM, weekly reports, intervals, and custom cron triggers). Relying exclusively on an in-memory timer or standalone Celery worker can lead to missed executions during worker restarts, duplicate execution on worker failovers, or total failure when running without a dedicated Celery worker.
+- **Decision**:
+  Implement persistent `automations` and `automation_executions` tables in PostgreSQL with `next_run_at` tracking and unique idempotency keys (`idempotency_key = {automation_id}:{timestamp}`). Schedule periodic evaluation via Celery Beat (`dispatch_due_automations_task` every 60s) while equipping `AutomationService.trigger_run` with an asynchronous local fallback. When manual or synchronous execution is requested, tasks execute immediately within the request loop; when background execution is requested, tasks are dispatched to Celery workers with non-blocking async fallback if workers are offline.
+- **Consequences**:
+  - Guarantees zero missed or lost schedules upon restarts.
+  - Eliminates duplicate execution risks via atomic timestamp and idempotency key checks.
+  - Total development ergonomics: automations run reliably even if the Celery worker process is not active.
+
+---
+
+## ADR-019: Granular Tool Permission Inheritance & Approval Life-Cycle Isolation for Scheduled Workflows
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Automations execute autonomously in the background. If an automation attempts to execute a sensitive action (e.g. sending an email, creating calendar events) or a critical action (e.g. deleting calendar events or files), running it without human intervention poses severe data integrity and communication risks. Conversely, granting an automation an open-ended bypass permission would violate the project's single-use approval and permission security boundaries.
+- **Decision**:
+  Enforce existing `ToolPermissionEngine`, `ApprovalManager`, and `ToolExecutionEngine` rules across all automation steps. When an automation encounters a Level 2 (Sensitive) or Level 3 (Critical) action, execution halts immediately, the state transitions to `WAITING_FOR_APPROVAL`, an approval request is created in `tool_approvals` linked specifically to that execution, and an internal notification is emitted. Approvals from previous executions cannot authorize future executions, preserving single-use isolation and auditability.
+- **Consequences**:
+  - Eliminates automated privilege escalation or unauthorized writes/deletes.
+  - Full alignment with Phase 3 & 3.1 security architecture.
+  - Clear human visibility and decision gating for background actions.
+
+---
+
+## ADR-020: First-Party OAuth Integrations Framework & Encrypted Symmetric Credential Storage
+- **Date**: 2026-11-22
+- **Status**: Accepted
+- **Context**:
+  Connecting external first-party platforms (Google Workspace for Gmail, Calendar, Drive; GitHub for repositories and issues) requires handling OAuth 2.0 authorization codes, access tokens, refresh tokens, and scope management. Exposing tokens to frontend bundles or storing them in plaintext database columns creates high vulnerability risks.
+- **Decision**:
+  Establish an extensible `BaseIntegrationProvider` architecture with centralized `IntegrationRegistry` and `IntegrationManager`. Credentials and tokens are symmetrically encrypted at rest using AES-256 (Fernet) keys derived from `SECRET_KEY`. CSRF states are validated on code callbacks with strict 15-minute expirations. API responses never expose tokens, and external service payloads (emails, calendar entries, issues) are sanitized to prevent delimiter breakouts (`</tool_output>`) and prompt injections.
+- **Consequences**:
+  - High security: zero secret leakage to clients or logs.
+  - Clean provider-independent extensibility for adding future OAuth connectors.
+  - Controlled development mode with mock token verification for offline environments.
+
+---
+
+## ADR-021: Independent Integration Services Architecture & Zero-Mock OAuth 2.0 Engine
+- **Date**: 2026-11-23
+- **Status**: Accepted
+- **Context**:
+  The initial Phase 4 integration consolidated Google Workspace into a single monolithic card and permitted mock authorization bypasses (`mock_google_test_token`) when credentials were not set. This compromised genuine agentic utility and violated the Zero-Mock Principle. Users require independent service granularity (Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts) with individual capability tracking, granular granted scopes, real REST API probes, and honest `CONFIGURATION_REQUIRED` states when credentials are not configured.
+- **Decision**:
+  1. Refactor `BaseIntegrationService` into an independent service model with `IntegrationRegistry` supporting independent discovery, category filtering, and capability matrices.
+  2. Implement official Google OAuth 2.0 authorization-code flow with PKCE, state validation, encrypted token storage via Fernet symmetric keys, and proactive automatic token refresh before API calls.
+  3. Decompose Google Workspace into 8 distinct service cards: `google_gmail`, `google_drive`, `google_calendar`, `google_docs`, `google_sheets`, `google_slides`, `google_tasks`, `google_contacts`.
+  4. Fully eliminate all synthetic mock codes and tokens from production codebase (`google.py`, `tools.py`, `IntegrationsView.tsx`).
+  5. Expand the native Tool Registry to include real live Web Research (`web_search`, `web_fetch_page`), CSV data inspection and statistics (`data_read_csv`, `data_statistics`), and sandboxed Python code execution (`code_execution_python`).
+- **Consequences**:
+  - Genuinely functional personal agent interacting with real provider APIs.
+  - Granular UI cards showing exact granted scopes, account identities, and live API health.
+  - Complete elimination of mock data; honest configuration errors when credentials are missing.
+
+

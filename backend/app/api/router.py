@@ -7,6 +7,10 @@ from app.memory import routes as memory_routes
 from app.tasks import routes as task_routes
 from app.voice import routes as voice_routes
 from app.tools.routes import tools_router, approvals_router
+from app.automations.routes import router as automations_router
+from app.integrations.routes import router as integrations_router
+from app.notifications.routes import router as notifications_router
+from app.briefings.routes import router as briefings_router
 
 api_router = APIRouter()
 
@@ -23,4 +27,11 @@ api_router.include_router(task_routes.router)
 api_router.include_router(voice_routes.router)
 api_router.include_router(tools_router)
 api_router.include_router(approvals_router)
+
+# Register Phase 4 Automations, Integrations, Notifications, Briefings
+api_router.include_router(automations_router)
+api_router.include_router(integrations_router)
+api_router.include_router(notifications_router)
+api_router.include_router(briefings_router)
+
 

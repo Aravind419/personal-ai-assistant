@@ -15,6 +15,7 @@ class ToolCategory(str, Enum):
     MATH = "math"
     TEXT = "text"
     FILE = "file"
+    STORAGE = "storage"
     WEB = "web"
     PRODUCTIVITY = "productivity"
     COMMUNICATION = "communication"

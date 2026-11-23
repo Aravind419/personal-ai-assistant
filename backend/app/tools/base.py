@@ -185,6 +185,8 @@ class ToolRegistry:
     @classmethod
     def register(cls, tool: BaseTool):
         cls._tools[tool.name] = tool
+        if hasattr(tool, "id") and tool.id:
+            cls._tools[tool.id] = tool
 
     @classmethod
     def unregister(cls, name: str):
@@ -194,6 +196,10 @@ class ToolRegistry:
     @classmethod
     def get(cls, name: str) -> Optional[BaseTool]:
         return cls._tools.get(name)
+
+    @classmethod
+    def has(cls, name: str) -> bool:
+        return name in cls._tools
 
     @classmethod
     def is_enabled(cls, name: str) -> bool:

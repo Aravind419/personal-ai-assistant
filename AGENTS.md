@@ -38,10 +38,12 @@ Before making modifications, read the required core documentation located in [do
   - **Phase 2 (Semantic Memory & Background Workers) — VERIFIED**
   - **Formatting & Conversational Intelligence Harness — VERIFIED**
   - **Phase 3 (Tool Execution & Human-in-the-Loop Approvals) — VERIFIED**
-- **Next Phase**: **Phase 4 (Proactive Background Automations & External Integrations) — NOT_STARTED**
+  - **Phase 3.1 (Security & Reliability Hardening) — VERIFIED**
+  - **Phase 4 (Proactive Background Automations & External Integrations) — VERIFIED**
+- **Next Phase**: **All Core Phases (0-4) Complete & Verified**
 
-> [!IMPORTANT]
-> Phase 4 is NOT started. Do not jump ahead into implementing Phase 4 (Proactive background automations, cron/event schedulers, and third-party OAuth connectors) without explicit user initiation and adhering to the planned task breakdown.
+> [!NOTE]
+> Phase 4 (Proactive background automations, Celery Beat periodic scheduler, first-party OAuth integrations, morning briefings, and persistent notification center) is complete and verified with 128 backend tests passing and clean frontend production build.
 
 ---
 
@@ -155,7 +157,7 @@ Client URL: [http://localhost:5173](http://localhost:5173)
 ```powershell
 & "backend\.venv\Scripts\pytest" backend
 ```
-Acceptance criteria: 100% passing tests (all 71 core tests across health, config, exceptions, security, conversations, chat stream, tools, memory intelligence, voice, and assistant conversational harness).
+Acceptance criteria: 100% passing tests (all 129 core tests across health, config, exceptions, security, conversations, chat stream, tools, memory intelligence, voice, Phase 3 tool execution & approvals, and Phase 4 automations & real integrations).
 
 ### Frontend Build & Typecheck
 ```powershell

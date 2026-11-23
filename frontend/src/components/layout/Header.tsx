@@ -1,6 +1,7 @@
 import type { HealthResponse } from '../../types/api';
 import { StatusBadge } from '../common/StatusBadge';
 import { Bot, RefreshCw, Server, Database, Menu } from 'lucide-react';
+import { NotificationBell } from '../common/NotificationBell';
 
 interface HeaderProps {
   health: HealthResponse | null;
@@ -84,6 +85,9 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-indigo-400' : ''}`} />
         </button>
+
+        {/* Phase 4 Internal Notification Center */}
+        <NotificationBell />
       </div>
     </header>
   );

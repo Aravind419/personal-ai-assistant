@@ -515,6 +515,399 @@ class FileDeleterTool(BaseTool):
         }
 
 
+# ============================================================================
+#                         EXPANDED REAL AGENT TOOLS
+# ============================================================================
+
+import csv
+import io
+import asyncio
+import sys
+import httpx
+from urllib.parse import urlparse
+
+
+class WebSearchTool(BaseTool):
+    """Real web search tool using DuckDuckGo API/HTML search."""
+    @property
+    def name(self) -> str:
+        return "web_search"
+
+    @property
+    def description(self) -> str:
+        return "Searches the live public web for current information, news, and technical documentation."
+
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.WEB
+
+    @property
+    def permission_level(self) -> PermissionLevel:
+        return PermissionLevel.SAFE
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "Search expression or question"},
+                "max_results": {"type": "integer", "default": 5, "minimum": 1, "maximum": 10},
+            },
+        }
+
+    async def run(self, query: str, max_results: int = 5, **kwargs) -> Dict[str, Any]:
+        if not query or not query.strip():
+            return {"query": query, "results": [], "count": 0}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        try:
+            # 1. DuckDuckGo Instant Answer API
+            api_url = "https://api.duckduckgo.com/"
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(
+                    api_url,
+                    params={"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"},
+                    headers=headers,
+                )
+                results = []
+                if resp.status_code == 200:
+                    data = resp.json()
+                    abstract = data.get("AbstractText")
+                    abstract_url = data.get("AbstractURL")
+                    source = data.get("AbstractSource")
+                    if abstract and abstract_url:
+                        results.append({
+                            "title": data.get("Heading") or source or "Overview",
+                            "url": abstract_url,
+                            "snippet": abstract,
+                        })
+
+                    for topic in data.get("RelatedTopics", []):
+                        if len(results) >= max_results:
+                            break
+                        if isinstance(topic, dict) and topic.get("Text") and topic.get("FirstURL"):
+                            results.append({
+                                "title": topic.get("Text")[:60] + "...",
+                                "url": topic.get("FirstURL"),
+                                "snippet": topic.get("Text"),
+                            })
+
+                # If instant answer returned results, return them
+                if results:
+                    return {
+                        "query": query,
+                        "count": len(results),
+                        "results": results,
+                    }
+
+                # 2. Fallback to DuckDuckGo HTML search
+                html_resp = await client.get(
+                    "https://html.duckduckgo.com/html/",
+                    params={"q": query},
+                    headers=headers,
+                )
+                if html_resp.status_code == 200:
+                    # Regex extract results
+                    pattern = re.compile(
+                        r'<a class="result__url" href="(?P<url>[^"]+)".*?<a class="result__snippet[^>]*>(?P<snippet>.*?)</a>',
+                        re.DOTALL | re.IGNORECASE,
+                    )
+                    matches = list(pattern.finditer(html_resp.text))
+                    for m in matches[:max_results]:
+                        url = m.group("url").strip()
+                        raw_snip = m.group("snippet")
+                        clean_snip = re.sub(r'<[^>]+>', '', raw_snip).strip()
+                        results.append({
+                            "title": query,
+                            "url": url,
+                            "snippet": clean_snip,
+                        })
+
+                return {
+                    "query": query,
+                    "count": len(results),
+                    "results": results if results else [{"message": "No direct search results found for this query."}],
+                }
+        except Exception as e:
+            return {"query": query, "count": 0, "error": f"Web search failed: {str(e)}", "results": []}
+
+
+class WebFetchPageTool(BaseTool):
+    """Fetches and cleans live text content from a web page."""
+    @property
+    def name(self) -> str:
+        return "web_fetch_page"
+
+    @property
+    def description(self) -> str:
+        return "Fetches clean readable text from a public web page URL (excluding scripts, styling, and navigation)."
+
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.WEB
+
+    @property
+    def permission_level(self) -> PermissionLevel:
+        return PermissionLevel.SAFE
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+                "url": {"type": "string", "description": "Public HTTP/HTTPS URL to fetch"},
+            },
+        }
+
+    async def run(self, url: str, **kwargs) -> Dict[str, Any]:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return {"error": "Invalid URL scheme. Only http and https are permitted."}
+
+        # SSRF protection: block loopback and private ranges
+        host = (parsed.hostname or "").lower()
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or host.startswith("192.168.") or host.startswith("10."):
+            return {"error": "Access to local/private network addresses is blocked for security."}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    return {"url": url, "status_code": resp.status_code, "error": f"HTTP {resp.status_code}"}
+
+                content_type = resp.headers.get("content-type", "")
+                if "html" not in content_type and "text" not in content_type:
+                    return {"url": url, "content_type": content_type, "message": "Binary or non-text content."}
+
+                raw_html = resp.text
+                # Remove scripts, styles, header, footer, nav
+                clean = re.sub(r'<script.*?</script>', ' ', raw_html, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<style.*?</style>', ' ', clean, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<nav.*?</nav>', ' ', clean, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<header.*?</header>', ' ', clean, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<footer.*?</footer>', ' ', clean, flags=re.DOTALL | re.IGNORECASE)
+                # Strip all HTML tags
+                text = re.sub(r'<[^>]+>', ' ', clean)
+                # Collapse whitespace
+                text = re.sub(r'\s+', ' ', text).strip()
+
+                # Extract title
+                title_match = re.search(r'<title>(.*?)</title>', raw_html, re.IGNORECASE | re.DOTALL)
+                title = title_match.group(1).strip() if title_match else parsed.netloc
+
+                max_chars = 6000
+                truncated = len(text) > max_chars
+                return {
+                    "url": url,
+                    "title": title,
+                    "character_count": len(text),
+                    "truncated": truncated,
+                    "text": text[:max_chars] + ("... [truncated]" if truncated else ""),
+                }
+        except Exception as e:
+            return {"url": url, "error": f"Failed to fetch page: {str(e)}"}
+
+
+class DataReadCsvTool(BaseTool):
+    """Inspects a CSV file in the sandboxed workspace."""
+    @property
+    def name(self) -> str:
+        return "data_read_csv"
+
+    @property
+    def description(self) -> str:
+        return "Reads a CSV file from workspace storage and returns column headers, row counts, and preview data."
+
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.FILE
+
+    @property
+    def permission_level(self) -> PermissionLevel:
+        return PermissionLevel.SAFE
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "required": ["file_path"],
+            "properties": {
+                "file_path": {"type": "string", "description": "Filename of CSV file in workspace_storage"},
+                "preview_rows": {"type": "integer", "default": 5, "maximum": 20},
+            },
+        }
+
+    async def run(self, file_path: str, preview_rows: int = 5, **kwargs) -> Dict[str, Any]:
+        safe_path = _validate_safe_path(file_path)
+        if not safe_path.exists():
+            return {"error": f"File '{file_path}' does not exist in workspace storage."}
+
+        with open(safe_path, mode="r", encoding="utf-8", errors="replace") as f:
+            reader = csv.reader(f)
+            headers = next(reader, [])
+            rows = []
+            total_rows = 0
+            for r in reader:
+                total_rows += 1
+                if len(rows) < preview_rows:
+                    rows.append(r)
+
+        return {
+            "file": safe_path.name,
+            "headers": headers,
+            "total_rows": total_rows,
+            "preview_rows": rows,
+        }
+
+
+class DataStatisticsTool(BaseTool):
+    """Calculates statistical metrics for numeric columns in a CSV file."""
+    @property
+    def name(self) -> str:
+        return "data_statistics"
+
+    @property
+    def description(self) -> str:
+        return "Calculates count, sum, mean, median, min, and max for numeric columns in a workspace CSV file."
+
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.MATH
+
+    @property
+    def permission_level(self) -> PermissionLevel:
+        return PermissionLevel.SAFE
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "required": ["file_path", "column_name"],
+            "properties": {
+                "file_path": {"type": "string", "description": "CSV filename in workspace_storage"},
+                "column_name": {"type": "string", "description": "Name of numeric column to analyze"},
+            },
+        }
+
+    async def run(self, file_path: str, column_name: str, **kwargs) -> Dict[str, Any]:
+        safe_path = _validate_safe_path(file_path)
+        if not safe_path.exists():
+            return {"error": f"File '{file_path}' does not exist."}
+
+        values: List[float] = []
+        with open(safe_path, mode="r", encoding="utf-8", errors="replace") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames or column_name not in reader.fieldnames:
+                return {
+                    "error": f"Column '{column_name}' not found. Available columns: {reader.fieldnames or []}"
+                }
+            for row in reader:
+                val_str = (row.get(column_name) or "").strip().replace(",", "")
+                if val_str:
+                    try:
+                        values.append(float(val_str))
+                    except ValueError:
+                        pass
+
+        if not values:
+            return {"error": f"No numeric values found in column '{column_name}'."}
+
+        values.sort()
+        count = len(values)
+        total = sum(values)
+        mean = total / count
+        median = values[count // 2] if count % 2 != 0 else (values[count // 2 - 1] + values[count // 2]) / 2.0
+        min_val = values[0]
+        max_val = values[-1]
+
+        return {
+            "file": safe_path.name,
+            "column": column_name,
+            "count": count,
+            "sum": round(total, 4),
+            "mean": round(mean, 4),
+            "median": round(median, 4),
+            "min": min_val,
+            "max": max_val,
+        }
+
+
+class CodeExecutionPythonTool(BaseTool):
+    """Controlled, isolated Python execution with timeout and output caps."""
+    @property
+    def name(self) -> str:
+        return "code_execution_python"
+
+    @property
+    def description(self) -> str:
+        return "Executes Python code in an isolated subprocess with a strict 5-second timeout and blocked host environment."
+
+    @property
+    def category(self) -> ToolCategory:
+        return ToolCategory.DEVELOPER
+
+    @property
+    def permission_level(self) -> PermissionLevel:
+        return PermissionLevel.SENSITIVE
+
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+                "code": {"type": "string", "description": "Python code snippet to execute"},
+            },
+        }
+
+    async def run(self, code: str, **kwargs) -> Dict[str, Any]:
+        # Clean execution environment: strip database credentials and API secrets
+        safe_env = {
+            "PYTHONIOENCODING": "utf-8",
+            "PATH": os.environ.get("PATH", ""),
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+            "TEMP": str(WORKSPACE_STORAGE_DIR),
+        }
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                code,
+                cwd=str(WORKSPACE_STORAGE_DIR),
+                env=safe_env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+            stdout = stdout_bytes.decode("utf-8", errors="replace")[:8000]
+            stderr = stderr_bytes.decode("utf-8", errors="replace")[:4000]
+
+            return {
+                "exit_code": proc.returncode,
+                "success": proc.returncode == 0,
+                "stdout": stdout,
+                "stderr": stderr,
+            }
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return {"success": False, "error": "Execution timed out after 5.0 seconds."}
+        except Exception as e:
+            return {"success": False, "error": f"Subprocess failed: {str(e)}"}
+
+
 # Register all native built-in tools
 ToolRegistry.register(SystemClockTool())
 ToolRegistry.register(CalculatorTool())
@@ -524,3 +917,11 @@ ToolRegistry.register(FileReaderTool())
 ToolRegistry.register(FileSearcherTool())
 ToolRegistry.register(FileWriterTool())
 ToolRegistry.register(FileDeleterTool())
+
+# Register new agent capabilities
+ToolRegistry.register(WebSearchTool())
+ToolRegistry.register(WebFetchPageTool())
+ToolRegistry.register(DataReadCsvTool())
+ToolRegistry.register(DataStatisticsTool())
+ToolRegistry.register(CodeExecutionPythonTool())
+

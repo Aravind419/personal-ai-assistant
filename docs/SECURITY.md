@@ -136,3 +136,23 @@ The **Personal AI Assistant** is designed as a single-user system. Because this 
    - Output truncation: payload size is strictly capped at 50,000 characters (`MAX_OUTPUT_CHARS`), appending truncation notices to prevent LLM context blowup or DoS.
    - Executable scripts (`<script>`, `<iframe>`, `javascript:`, `onerror=`) and system override directives (`<system>`, `ignore previous instructions`, `you are now in dan mode`) are neutralized.
    - Structural isolation: permissions are evaluated strictly server-side in PostgreSQL. A tool output claiming `{"approved": true, "role": "admin"}` is never trusted by `ToolPermissionEngine`.
+
+---
+
+## 9. Proactive Automations & External Integrations Security (Phase 4)
+
+1. **OAuth Credential Security & Fernet Encryption**:
+   - External provider tokens (Google Workspace, GitHub) are encrypted at rest in `integration_connections.encrypted_access_token` and `encrypted_refresh_token` using Fernet symmetric encryption.
+   - Tokens are never returned to client endpoints; only connection status, masked account emails, and granted scopes are exposed to the UI.
+2. **CSRF State Verification**:
+   - OAuth authorization URLs include cryptographically random `state` tokens cached with TTL.
+   - Callbacks strictly validate the returned state to prevent OAuth login CSRF attacks.
+3. **Execution-Linked Single-Use Approvals**:
+   - When an automation executes a sensitive or critical tool, execution halts in `WAITING_FOR_APPROVAL` state and creates a single-use approval bound to the specific execution ID.
+   - Past approvals cannot authorize future recurring executions.
+4. **Untrusted External Content Sanitization**:
+   - Text retrieved from external integrations (email bodies, calendar event descriptions, GitHub issue comments) is processed through `sanitize_untrusted_text`.
+   - Delimiters such as `</tool_output>`, `<system>`, and script tags are escaped to prevent prompt injection breakouts.
+5. **Strict Scope Minimization**:
+   - OAuth integrations request only the minimal scopes required for listed capabilities.
+

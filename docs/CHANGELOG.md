@@ -6,6 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.6.1] - 2026-11-23 - Real Integrations, Real Tools & Independent Service Architecture
+
+### Added & Refactored
+- **Independent Integration Services Decomposition**:
+  - Replaced monolithic Google Workspace card with 8 independent, first-class services in `backend/app/integrations/google_services.py`:
+    1. **Gmail** (`google_gmail`): Read, search, draft, send with approval, thread history, attachments.
+    2. **Google Drive** (`google_drive`): Search, metadata, read, download, export Docs/Sheets, upload notes.
+    3. **Google Calendar** (`google_calendar`): List today/window events, check availability, create meetings, delete events.
+    4. **Google Docs** (`google_docs`): Read document structure, create documents via Docs v1 API.
+    5. **Google Sheets** (`google_sheets`): Read range, append rows via Sheets v4 API.
+    6. **Google Slides** (`google_slides`): Inspect deck metadata, create presentations via Slides v1 API.
+    7. **Google Tasks** (`google_tasks`): List tasklists, list tasks, create tasks via Tasks v1 API.
+    8. **Google Contacts** (`google_contacts`): Verified contact lookup via People API.
+  - Added roadmap planned service definitions for Microsoft Outlook, OneDrive, Calendar, Slack, Notion, Canva, Dropbox, Trello, Linear, and Discord with clear `planned` status badges.
+- **Zero-Mock Official OAuth 2.0 Engine**:
+  - Eradicated all synthetic mock codes, tokens, and browser prompt bypasses from production backend and frontend.
+  - Implemented official Google OAuth 2.0 authorization code flow with offline refresh tokens (`access_type=offline`, `prompt=consent`), state verification, and PKCE.
+  - Added proactive automatic token refresh before API calls when tokens expire within 60 seconds (`IntegrationManager.get_valid_access_token`).
+  - Added honest `CONFIGURATION_REQUIRED` status when developer credentials (`CLIENT_ID` / `CLIENT_SECRET`) are not configured, with detailed setup instructions modal.
+- **Real Provider API Client (`GoogleApiClient`)**:
+  - Built comprehensive REST API client with Bearer authorization, RFC 2822 MIME decoding, base64url parsing, and prompt injection defense.
+  - Real health check probes for each service testing live Google endpoints.
+- **Expanded Real Tool Catalogue**:
+  - Added live Web Research tools: `web_search` (DuckDuckGo live web search with citations) and `web_fetch_page` (live HTTP retrieval with HTML cleaning and SSRF protection).
+  - Added Data Analysis tools: `data_read_csv` (CSV inspection in workspace sandbox) and `data_statistics` (numeric column statistics).
+  - Added Sandboxed Code Execution: `code_execution_python` (isolated subprocess with 5-second timeout, memory bounds, and stripped environment).
+- **Redesigned Integrations View (`IntegrationsView.tsx`)**:
+  - Category filtering (All, Google Workspace, Developer Tools, Communication, Productivity, Storage, Design & Media).
+  - Live search input filtering services by name and capabilities.
+  - Independent service cards with real status badges, account email display, capabilities checklist, Details modal, and Configure modal.
+  - Listens for OAuth popup `postMessage` callback for seamless authorization without full-page reloads.
+- **Documentation**:
+  - Created `docs/integrations/GOOGLE_SETUP.md` with complete step-by-step Google Cloud console setup instructions.
+  - Created `docs/integrations/GITHUB_SETUP.md` with GitHub OAuth application configuration guide.
+  - Created `docs/integrations/PROVIDER_MATRIX.md` with technical scope and capability matrix across all providers.
+  - Authored functionality audit report in brain artifacts.
+- **Verification**:
+  - 129 backend tests passing (100% pass rate).
+  - 0 TypeScript compilation errors; Vite production bundle built in 1.99s.
+  - Full Playwright browser MCP verification of the independent service cards, configuration modal, and category filtering.
+
+### Added
+- **Persistent Automation System**:
+  - Alembic migration `008_automations_and_integrations.py` adding `automations`, `automation_executions`, `integration_connections`, `integration_sync_logs`, `notifications`, and `briefings` tables.
+  - SQLAlchemy models in `backend/app/models/automation.py`.
+  - Comprehensive schemas supporting `one_time`, `interval`, `daily`, `weekly`, `monthly`, `cron`, and `manual` trigger types in `backend/app/automations/schemas.py`.
+  - Timezone-aware next run calculation handling DST with `zoneinfo` and `croniter` in `backend/app/automations/scheduler_utils.py`.
+- **Background Execution & Scheduling Engine**:
+  - Celery Beat periodic schedule configured (`dispatch-due-automations-every-minute`) in `backend/app/tasks/celery_app.py`.
+  - Reliable task executor (`AutomationExecutor`) with step-by-step tool dispatch, duration tracking, idempotency enforcement, and retry policies.
+  - Resilient local asynchronous fallback in `AutomationService.trigger_run` ensuring zero dropped tasks when Celery workers or Redis are offline.
+- **Natural-Language Automation Creator**:
+  - `AutomationInstructionParser` converting natural descriptions (e.g. "Every morning at 8 AM, prepare a briefing...") into structured validated configurations.
+  - Strict tool validation against `ToolRegistry` preventing execution of hallucinated or unregistered tools.
+- **Permission & Approval Gating for Automations**:
+  - Existing `ToolPermissionEngine` and `ApprovalManager` boundaries strictly enforced on every automation action step.
+  - Sensitive (Level 2) and Critical (Level 3) actions halt automation execution with state `WAITING_FOR_APPROVAL` and generate single-use execution-linked approval requests.
+- **First-Party OAuth Integrations Framework**:
+  - `BaseIntegrationProvider` interface and `IntegrationManager` with Fernet AES-256 symmetric credential encryption.
+  - Google Workspace provider (Gmail, Google Calendar, Google Drive) with 7 native tools.
+  - GitHub provider (Repositories, Issues) with 3 native tools.
+  - Untrusted external content sanitization (`sanitize_untrusted_text`) escaping XML tags and delimiter breakouts (`</tool_output>`).
+- **Morning Briefing Generator & Notification Center**:
+  - `BriefingService` synthesizing multi-source morning digest from calendar, unread emails, pending approvals, and active automations.
+  - Persistent `Notification` system with unread count badge, real-time polling, and dismissal actions.
+- **Frontend Dashboards & UI Widgets**:
+  - `AutomationsView.tsx`: Full automations dashboard with metric cards, natural language creation modal with live preview, enable/disable toggle, manual run button, and execution history drawer.
+  - `IntegrationsView.tsx`: First-party OAuth connection hub for Google Workspace and GitHub with status badges, test probe, and sync actions.
+  - `NotificationBell.tsx`: Interactive notification popover in navigation header.
+  - `DashboardOverview.tsx`: Proactive Morning Briefing card with on-demand generation and active automations widget.
+- **Testing & Quality Assurance**:
+  - Automated test suite expanded to **128 passing backend pytest tests** (100% pass rate).
+  - Clean production build (`npm run build`) in 567ms with 0 TypeScript errors.
+  - Complete Playwright MCP browser verification across all 10 end-to-end workflows.
+
+---
+
 ## [0.5.1] - 2026-11-22 - Phase 3.1: Tool Execution Security Hardening & Real MCP Validation
 
 ### Added

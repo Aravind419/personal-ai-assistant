@@ -39,6 +39,20 @@ async def lifespan(app: FastAPI):
             "The backend will run; database features will be available once PostgreSQL is running."
         )
 
+    # Register Integration Providers and Tools
+    try:
+        from app.integrations.base import IntegrationRegistry
+        from app.integrations.tools import register_integration_tools
+        from app.briefings.service import GenerateMorningBriefingTool
+        from app.tools.base import ToolRegistry
+
+        IntegrationRegistry._ensure_defaults()
+        register_integration_tools()
+        ToolRegistry.register(GenerateMorningBriefingTool())
+        logger.info("Initialized Phase 4 integrations, providers, and briefing tools.")
+    except Exception as exc:
+        logger.warning(f"Could not register Phase 4 integration tools on startup: {exc}")
+
     yield
 
     logger.info(f"Shutting down {settings.APP_NAME}...")

@@ -315,3 +315,60 @@ personal-ai-assistent/
 - Streaming SSE endpoint detects tool requests in chat messages (`extract_tool_call`).
 - Automatically executes safe tools or generates approval requests for sensitive tools.
 - Multi-round support (up to 5 rounds) with buffer reset allows model to inspect tool results and synthesize natural language explanations.
+
+---
+
+## 8. Proactive Automations & External Integrations Architecture (Phase 4)
+
+### 8.1 Automation Management & Dispatch Subsystem
+- **Automation Model (`Automation`)**: Stores scheduled tasks with natural language instruction, trigger type (`daily`, `weekly`, `monthly`, `interval`, `cron`, `one_time`, `manual`), timezone, structured action array (`AutomationAction`), status (`enabled`/`disabled`), and run metrics (`execution_count`, `last_execution_at`, `next_execution_at`).
+- **Timezone-Aware Next Run Computation (`scheduler_utils.py`)**:
+  - Leverages Python `zoneinfo.ZoneInfo` and `croniter` for rigorous DST transitions and recurring intervals.
+  - Defaults to `DEFAULT_TIMEZONE` (UTC or user-configured).
+- **Execution Tracking (`AutomationExecution`)**:
+  - Captures execution state: `SCHEDULED`, `QUEUED`, `RUNNING`, `WAITING_FOR_APPROVAL`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `SKIPPED`, `TIMED_OUT`.
+  - Records step-by-step actions, tool outputs, execution duration, and error diagnostics.
+- **Natural Language Parsing (`AutomationInstructionParser`)**:
+  - Extracts intended schedule and tools using heuristics/LLM reasoning.
+  - Enforces strict validation via `ToolRegistry.has` — never trusts hallucinated tool names.
+
+### 8.2 Execution Engine & Celery Beat Integration
+- **Hybrid Dispatch Architecture (`AutomationService.trigger_run`)**:
+  - **Manual/Synchronous Runs (`background=False`)**: Direct execution in request context with immediate return of status and tool output summary.
+  - **Scheduled/Worker Runs (`background=True`)**: Celery task dispatch (`run_automation_celery_task.apply_async`) with automated fallback to asynchronous background loop task if Celery workers are offline.
+- **Periodic Scheduler (`Celery Beat`)**:
+  - Periodic task `dispatch-due-automations-every-minute` triggers `dispatch_due_automations_task` every 60 seconds.
+  - Queries active enabled automations where `next_execution_at <= now()` and dispatches tasks with idempotency guarantees.
+
+### 8.3 Permission & Approval Gating for Automations
+- **Zero-Bypass Integration**:
+  - Automation actions pass directly through `ToolExecutionEngine`, `ToolPermissionEngine`, and `ApprovalManager`.
+  - `SAFE` tools execute automatically.
+  - `SENSITIVE` and `CRITICAL` tools halt the automation in `WAITING_FOR_APPROVAL` state, create a single-use execution-linked approval in `tool_approvals`, and generate an in-app notification.
+  - A prior approval cannot authorize future recurring executions — each run maintains its own distinct approval lifecycle.
+
+### 8.4 First-Party OAuth Integrations Framework
+- **Abstract Provider Contract (`BaseIntegrationProvider`)**:
+  - Defines OAuth URL generation, code exchange, token refresh, connection testing, data sync, and disconnection.
+  - `GoogleIntegrationProvider`: Manages Google Workspace integration (Gmail, Calendar, Drive).
+  - `GitHubIntegrationProvider`: Manages GitHub integration (Repositories, Issues).
+- **Encrypted Credential Storage (`IntegrationConnection`)**:
+  - Stores access and refresh tokens encrypted with AES-256 (Fernet) via `IntegrationManager`.
+  - Cryptographic CSRF state validation in Redis/in-memory state cache.
+- **10 Integration Tools (`app/integrations/tools.py`)**:
+  - `google_mail_list`, `google_mail_read`, `google_mail_send` (Sensitive).
+  - `google_calendar_list`, `google_calendar_create` (Sensitive), `google_calendar_delete` (Critical).
+  - `google_drive_list`.
+  - `github_list_repos`, `github_list_issues`, `github_create_issue` (Sensitive).
+  - Output sanitization (`sanitize_untrusted_text`) neutralizes delimiter breakout and malicious payloads.
+
+### 8.5 Morning Briefing & Persistent Notifications
+- **Morning Briefing Generator (`BriefingService`)**:
+  - Aggregates upcoming calendar events, unread emails, pending tool approvals, and active automations.
+  - Synthesizes formatted Markdown briefings without hallucinating missing data.
+  - Exposes `GenerateMorningBriefingTool` for agentic use and REST endpoints (`/api/v1/briefings`).
+- **Notification Subsystem (`NotificationService`)**:
+  - Persistent notifications stored in PostgreSQL `notifications`.
+  - Categories: `AUTOMATION_SUCCESS`, `AUTOMATION_FAILED`, `APPROVAL_REQUIRED`, `INTEGRATION_SYNC`, `BRIEFING_READY`.
+  - Supports unread count polling, mark as read, mark all read, and dismissal.
+

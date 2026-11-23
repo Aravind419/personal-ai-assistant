@@ -6,16 +6,18 @@
 
 ## 1. Executive Summary
 
-- **Current Development Phase**: **Phase 3.1 (Tool Execution Security, Reliability & Real MCP Validation) [0.5.1] — VERIFIED**
-- **Next Development Phase**: **Phase 4 (Proactive Background Automations & OAuth Integrations) — NOT_STARTED**
-- **Overall Progress**: Phase 0, Phase 1, Multi-Model Architecture & Cost Controls, Phase 2 (Semantic Memory & Background Workers), Advanced Response Formatting & Voice Conversation System, Advanced Conversational Intelligence & Assistant Harness, Phase 3 (Tool Execution & Human-in-the-Loop Approvals), and Phase 3.1 (Security Hardening & Real MCP Validation) are 100% complete and verified. Key features delivered in Phase 3.1:
-  - Single-use approval enforcement via atomic execution claim (`mark_approval_executed`), preventing replay attacks and double execution.
-  - Mandatory explicit confirmation (`confirm_critical=true`) for Level 3 Critical actions (e.g. `file_deleter`).
-  - User boundary enforcement preventing cross-user approval tampering (`requested_by` vs `decided_by`).
-  - Filesystem sandbox hardening: null-byte injection rejection, symlink escape checks in hierarchy, directory-part traversal blocks (`.git`, `.ssh`, `.env`, `.aws`, `.azure`, `node_modules`, `.venv`), infrastructure deletion protection (`.gitkeep`), and 5MB I/O read/write resource caps.
-  - Prompt Injection & DoS defense: 50KB payload truncation, delimiter breakout defense (`</tool_output>` escaping), HTML/script sanitization, and server-side permission independence.
-  - Real local stdio and HTTP MCP server verification: initialization handshake, discovery, schema validation, registration, execution, timeout handling, connection failures, and malformed responses.
-  - Automated test suite expanded to **119 passing backend pytest tests** (100% pass rate), 0 TypeScript/build errors, and Playwright MCP browser verification.
+- **Current Development Phase**: **Phase 4 (Proactive Automations & Real External Integrations) [0.6.1] — VERIFIED**
+- **Next Development Phase**: **Phase 5 (Long-Term Expansion & Autonomous Proactivity) — NOT_STARTED**
+- **Overall Progress**: Phase 0, Phase 1, Multi-Model Architecture & Cost Controls, Phase 2 (Semantic Memory & Background Workers), Advanced Response Formatting & Voice Conversation System, Advanced Conversational Intelligence & Assistant Harness, Phase 3 (Tool Execution & Human-in-the-Loop Approvals), Phase 3.1 (Security Hardening & Real MCP Validation), and Phase 4 (Proactive Automations & Real Integrations) are 100% complete and verified. Key features delivered:
+  - Real Google OAuth 2.0 authorization code flow with offline refresh tokens, PKCE, state validation, and Fernet AES-256 symmetric encryption.
+  - Independent first-class service cards for Gmail, Google Drive, Google Calendar, Google Docs, Google Sheets, Google Slides, Google Tasks, and Google Contacts.
+  - Complete elimination of mock codes, mock tokens, and synthetic prompts from production backend and frontend.
+  - Honest `CONFIGURATION_REQUIRED` status with step-by-step setup modal when credentials are not configured.
+  - Real Google REST API clients (`GoogleApiClient`) with full RFC 2822 MIME decoding, base64url parsing, and prompt injection defense.
+  - Expanded Tool Registry with live Web Research (`web_search`, `web_fetch_page`), CSV data analysis (`data_read_csv`, `data_statistics`), and sandboxed Python code execution (`code_execution_python`).
+  - Persistent automation management system with Celery Beat periodic scheduler and resilient local asynchronous fallback.
+  - Persistent internal notification center with unread count badges and daily morning briefing generator.
+  - Automated test suite verified at **129 passing backend pytest tests** (100% pass rate), 0 TypeScript/build errors, and complete Playwright MCP browser verification.
 
 ---
 
@@ -30,7 +32,7 @@
 | **Formatting & Voice** | Advanced Response Formatting & Voice Conversation System | **VERIFIED** | 2026-11-22 |
 | **Conversational AI** | Advanced Conversational Intelligence & Assistant Harness | **VERIFIED** | 2026-11-22 |
 | **Phase 3** | Tool Execution, MCP Bridge, Human-in-the-Loop Approvals Engine | **VERIFIED** | 2026-11-22 |
-| **Phase 4** | Proactive Background Automations & OAuth Integrations | **NOT_STARTED** | — |
+| **Phase 4** | Proactive Background Automations & OAuth Integrations | **VERIFIED** | 2026-11-22 |
 
 ---
 
@@ -151,24 +153,30 @@
 - **Output**:
   ```
   vite v8.3.8 building client environment for production...
-  ✓ 2410 modules transformed.
+  ✓ 2414 modules transformed.
   dist/index.html                   0.46 kB │ gzip:   0.31 kB
-  dist/assets/index-CQaS8zTv.css   84.05 kB │ gzip:  12.91 kB
-  dist/assets/index-Crbd2Z-I.js   602.37 kB │ gzip: 163.79 kB
-  ✓ built in 4.71s
+  dist/assets/index-3s5_XiOq.css   87.82 kB │ gzip:  13.34 kB
+  dist/assets/index-CWfSIzhE.js   641.00 kB │ gzip: 170.75 kB
+  ✓ built in 567ms
+  ```
+
+### Backend Test Results
+- **Command**: `pytest backend`
+- **Output**:
+  ```
+  ============================= 128 passed in 9.76s =============================
   ```
 
 ---
 
 ## 6. Exact Next Implementation Task
 
-When starting work on **Phase 4 (Proactive Background Automations & OAuth Integrations)**:
+When starting work on subsequent expansion:
 
-1. **Task 4.1**: Implement **Celery Beat / Cron Automation Engine**:
-   - Create recurring job schedule models and execution dispatchers in `backend/app/tasks/`.
-2. **Task 4.2**: Implement **Proactive Notification & Alert System**:
-   - Backend alerts for completed tasks, memory consolidation insights, and morning briefings.
-3. **Task 4.3**: Implement **Third-Party OAuth Connectors**:
-   - Secure credential flows for external services (Google Workspace, GitHub).
-4. **Task 4.4**: Build **Automations UI**:
-   - Interactive scheduler and cron manager dashboard in frontend.
+1. **Phase 5 Foundation**:
+   - Advanced autonomous agents and event-driven reactive hooks.
+2. **Additional First-Party Connectors**:
+   - Slack, Notion, and Discord integrations extending the `BaseIntegrationProvider` framework.
+3. **Proactive Memory Consolidator**:
+   - Periodic background clustering and summarization of long-term semantic memories.
+

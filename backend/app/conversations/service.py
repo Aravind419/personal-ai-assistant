@@ -38,27 +38,53 @@ from app.core.config import settings
 def extract_tool_call(content: str) -> Optional[Tuple[str, dict[str, Any]]]:
     """
     Detects whether LLM output contains an intentional tool call request.
-    Extracts tool name and arguments dictionary.
+    Extracts tool name and arguments dictionary. Supports multiple common formats.
     """
     if not content:
         return None
+
+    def parse_dict(data: Any) -> Optional[Tuple[str, dict[str, Any]]]:
+        if not isinstance(data, dict):
+            return None
+        # Format 1: {"action": "call_tool", "tool": "...", "arguments": {...}}
+        if data.get("action") in ("call_tool", "tool_call") and "tool" in data:
+            return str(data["tool"]), data.get("arguments") or data.get("parameters") or {}
+        # Format 2: {"tool_call": {"name": "...", "arguments": {...}}}
+        if "tool_call" in data and isinstance(data["tool_call"], dict):
+            tc = data["tool_call"]
+            name = tc.get("name") or tc.get("tool")
+            if name:
+                return str(name), tc.get("arguments") or tc.get("parameters") or {}
+        # Format 3: {"function": {"name": "...", "arguments": {...}}}
+        if "function" in data and isinstance(data["function"], dict):
+            fn = data["function"]
+            if "name" in fn:
+                args = fn.get("arguments") or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        args = {}
+                return str(fn["name"]), args
+        return None
+
     # 1. Look for ```json ... ``` blocks
     json_blocks = re.findall(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content)
     for block in json_blocks:
         try:
-            data = json.loads(block)
-            if isinstance(data, dict) and data.get("action") == "call_tool" and "tool" in data:
-                return str(data["tool"]), data.get("arguments", {})
+            parsed = parse_dict(json.loads(block))
+            if parsed:
+                return parsed
         except Exception:
             pass
 
-    # 2. Look for raw JSON object with "action": "call_tool"
-    matches = re.findall(r'(\{\s*"action"\s*:\s*"call_tool"[\s\S]*?\})', content)
+    # 2. Look for raw JSON objects with action, tool_call, or function
+    matches = re.findall(r'(\{\s*"(?:action|tool_call|function)"[\s\S]*?\})', content)
     for match in matches:
         try:
-            data = json.loads(match)
-            if isinstance(data, dict) and data.get("action") == "call_tool" and "tool" in data:
-                return str(data["tool"]), data.get("arguments", {})
+            parsed = parse_dict(json.loads(match))
+            if parsed:
+                return parsed
         except Exception:
             pass
 
