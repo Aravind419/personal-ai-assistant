@@ -91,6 +91,22 @@ export const toolService = {
     });
   },
 
+  async testMcpServer(serverId: string): Promise<{
+    success: boolean;
+    latency_ms: number;
+    server_id: string;
+    name: string;
+    status: string;
+    tools_count?: number;
+    tools?: Array<{ name: string; description?: string }>;
+    message: string;
+    error?: string;
+  }> {
+    return apiClient(`/tools/mcp/servers/${serverId}/test`, {
+      method: 'POST',
+    });
+  },
+
   async updateMcpServer(
     serverId: string,
     payload: { is_enabled?: boolean; name?: string; command?: string; url?: string }

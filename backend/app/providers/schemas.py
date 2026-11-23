@@ -39,8 +39,10 @@ class ChatMessageRole(str, Enum):
 
 class ChatMessage(BaseModel):
     role: ChatMessageRole
-    content: str
+    content: Optional[str] = ""
     name: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -50,6 +52,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = Field(None, gt=0)
     stream: bool = False
     system_prompt: Optional[str] = None
+    tools: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatCompletionResponse(BaseModel):
@@ -58,13 +61,15 @@ class ChatCompletionResponse(BaseModel):
     content: str
     finish_reason: Optional[str] = None
     usage: Optional[Dict[str, int]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatStreamChunk(BaseModel):
     id: Optional[str] = None
-    delta: str
+    delta: str = ""
     finish_reason: Optional[str] = None
     error: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 class ModelInfo(BaseModel):

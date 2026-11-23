@@ -297,15 +297,33 @@ export const ChatView: React.FC<ChatViewProps> = ({ onNavigateToSettings }) => {
         onNotice: (notice) => {
           setFallbackNotice(notice);
         },
+        onAssistantStatus: (st) => {
+          setToolNotice(st.status);
+        },
+        onToolExecutionStarted: (evt) => {
+          setToolNotice(`Running: ${evt.tool_name}...`);
+        },
+        onToolExecutionCompleted: (evt) => {
+          setToolNotice(
+            evt.success
+              ? `✓ ${evt.tool_name} completed in ${evt.duration_ms ?? 0}ms`
+              : `⚠ ${evt.tool_name} failed`
+          );
+          setTimeout(() => setToolNotice(null), 3500);
+        },
         onToolCall: (call) => {
-          setToolNotice(`Executing tool: ${call.tool}...`);
+          setToolNotice(`Calling ${call.display_name || call.tool}...`);
         },
         onToolResult: (res) => {
-          setToolNotice(res.success ? `Tool '${res.tool}' succeeded.` : `Tool '${res.tool}' failed: ${res.error || 'error'}`);
+          setToolNotice(
+            res.success
+              ? `✓ ${res.display_name || res.tool} succeeded`
+              : `⚠ ${res.display_name || res.tool} failed`
+          );
           setTimeout(() => setToolNotice(null), 3500);
         },
         onApprovalRequired: (app) => {
-          setToolNotice(`Action requires approval: ${app.tool}`);
+          setToolNotice(`Action requires approval: ${app.display_name || app.tool}`);
         },
         onResetBuffer: () => {
           setActiveConversation((prev) => {

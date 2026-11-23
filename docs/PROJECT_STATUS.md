@@ -6,18 +6,18 @@
 
 ## 1. Executive Summary
 
-- **Current Development Phase**: **Phase 4 (Proactive Automations & Real External Integrations) [0.6.1] — VERIFIED**
+- **Current Development Phase**: **Phase 4 & Critical Repairs [0.6.2] — VERIFIED**
 - **Next Development Phase**: **Phase 5 (Long-Term Expansion & Autonomous Proactivity) — NOT_STARTED**
 - **Overall Progress**: Phase 0, Phase 1, Multi-Model Architecture & Cost Controls, Phase 2 (Semantic Memory & Background Workers), Advanced Response Formatting & Voice Conversation System, Advanced Conversational Intelligence & Assistant Harness, Phase 3 (Tool Execution & Human-in-the-Loop Approvals), Phase 3.1 (Security Hardening & Real MCP Validation), and Phase 4 (Proactive Automations & Real Integrations) are 100% complete and verified. Key features delivered:
   - Real Google OAuth 2.0 authorization code flow with offline refresh tokens, PKCE, state validation, and Fernet AES-256 symmetric encryption.
   - Independent first-class service cards for Gmail, Google Drive, Google Calendar, Google Docs, Google Sheets, Google Slides, Google Tasks, and Google Contacts.
   - Complete elimination of mock codes, mock tokens, and synthetic prompts from production backend and frontend.
-  - Honest `CONFIGURATION_REQUIRED` status with step-by-step setup modal when credentials are not configured.
   - Real Google REST API clients (`GoogleApiClient`) with full RFC 2822 MIME decoding, base64url parsing, and prompt injection defense.
-  - Expanded Tool Registry with live Web Research (`web_search`, `web_fetch_page`), CSV data analysis (`data_read_csv`, `data_statistics`), and sandboxed Python code execution (`code_execution_python`).
-  - Persistent automation management system with Celery Beat periodic scheduler and resilient local asynchronous fallback.
-  - Persistent internal notification center with unread count badges and daily morning briefing generator.
-  - Automated test suite verified at **129 passing backend pytest tests** (100% pass rate), 0 TypeScript/build errors, and complete Playwright MCP browser verification.
+  - Provider-independent tool orchestration loop with native function calling support (`tools` payload, streaming delta tool calls) and stream buffering preventing raw JSON leakage into chat bubbles.
+  - Verified Gmail send-test workflow with preview and explicit confirmation (`/api/v1/integrations/google_gmail/send-test`).
+  - Runtime MCP Server test connection endpoint (`/api/v1/tools/mcp/servers/{server_id}/test`).
+  - Redesigned Chat UI with collapsible responsive sidebar rail (`w-16`), spacious conversation thread, bottom-docked composer, and structured tool activity progress badges.
+  - Automated test suite verified at **131 passing backend pytest tests** (100% pass rate), 0 TypeScript/build errors, and complete Playwright MCP browser verification.
 
 ---
 
@@ -155,16 +155,16 @@
   vite v8.3.8 building client environment for production...
   ✓ 2414 modules transformed.
   dist/index.html                   0.46 kB │ gzip:   0.31 kB
-  dist/assets/index-3s5_XiOq.css   87.82 kB │ gzip:  13.34 kB
-  dist/assets/index-CWfSIzhE.js   641.00 kB │ gzip: 170.75 kB
-  ✓ built in 567ms
+  dist/assets/index-BEKKToGB.css   91.38 kB │ gzip:  13.76 kB
+  dist/assets/index-Skaxjv1v.js   665.12 kB │ gzip: 175.49 kB
+  ✓ built in 1.84s
   ```
 
 ### Backend Test Results
 - **Command**: `pytest backend`
 - **Output**:
   ```
-  ============================= 128 passed in 9.76s =============================
+  ============================ 131 passed in 26.87s =============================
   ```
 
 ---

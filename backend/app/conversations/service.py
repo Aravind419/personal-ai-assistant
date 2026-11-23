@@ -28,6 +28,7 @@ from app.providers.model_registry import CentralModelRegistry
 from app.providers.model_service import ModelService
 from app.conversations.personality import PersonalityService
 from app.conversations.context_builder import ContextBuilder
+from app.tools.base import ToolRegistry, BaseTool
 from app.tools.engine import ToolExecutionEngine
 from app.tools.schemas import ExecutionStatus
 from app.core.exceptions import ResourceNotFoundException
@@ -38,7 +39,7 @@ from app.core.config import settings
 def extract_tool_call(content: str) -> Optional[Tuple[str, dict[str, Any]]]:
     """
     Detects whether LLM output contains an intentional tool call request.
-    Extracts tool name and arguments dictionary. Supports multiple common formats.
+    Extracts tool name and arguments dictionary. Resolves aliases and canonical IDs via ToolRegistry.
     """
     if not content:
         return None
@@ -46,26 +47,42 @@ def extract_tool_call(content: str) -> Optional[Tuple[str, dict[str, Any]]]:
     def parse_dict(data: Any) -> Optional[Tuple[str, dict[str, Any]]]:
         if not isinstance(data, dict):
             return None
+        raw_name: Optional[str] = None
+        args: dict[str, Any] = {}
+
         # Format 1: {"action": "call_tool", "tool": "...", "arguments": {...}}
         if data.get("action") in ("call_tool", "tool_call") and "tool" in data:
-            return str(data["tool"]), data.get("arguments") or data.get("parameters") or {}
+            raw_name = str(data["tool"])
+            args = data.get("arguments") or data.get("parameters") or {}
         # Format 2: {"tool_call": {"name": "...", "arguments": {...}}}
-        if "tool_call" in data and isinstance(data["tool_call"], dict):
+        elif "tool_call" in data and isinstance(data["tool_call"], dict):
             tc = data["tool_call"]
-            name = tc.get("name") or tc.get("tool")
-            if name:
-                return str(name), tc.get("arguments") or tc.get("parameters") or {}
+            raw_name = str(tc.get("name") or tc.get("tool") or "")
+            args = tc.get("arguments") or tc.get("parameters") or {}
         # Format 3: {"function": {"name": "...", "arguments": {...}}}
-        if "function" in data and isinstance(data["function"], dict):
+        elif "function" in data and isinstance(data["function"], dict):
             fn = data["function"]
-            if "name" in fn:
-                args = fn.get("arguments") or {}
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except Exception:
-                        args = {}
-                return str(fn["name"]), args
+            raw_name = str(fn.get("name") or "")
+            args = fn.get("arguments") or {}
+        # Format 4: {"tool": "...", "arguments": {...}}
+        elif "tool" in data and ("arguments" in data or "parameters" in data):
+            raw_name = str(data["tool"])
+            args = data.get("arguments") or data.get("parameters") or {}
+        # Format 5: {"name": "...", "arguments": {...}}
+        elif "name" in data and ("arguments" in data or "parameters" in data):
+            raw_name = str(data["name"])
+            args = data.get("arguments") or data.get("parameters") or {}
+
+        if raw_name:
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {}
+            # Canonicalize tool name via ToolRegistry
+            tool = ToolRegistry.get(raw_name)
+            tool_id = getattr(tool, "id", raw_name) if tool else raw_name
+            return (tool_id, args if isinstance(args, dict) else {})
         return None
 
     # 1. Look for ```json ... ``` blocks
@@ -78,8 +95,8 @@ def extract_tool_call(content: str) -> Optional[Tuple[str, dict[str, Any]]]:
         except Exception:
             pass
 
-    # 2. Look for raw JSON objects with action, tool_call, or function
-    matches = re.findall(r'(\{\s*"(?:action|tool_call|function)"[\s\S]*?\})', content)
+    # 2. Look for raw JSON objects with action, tool, tool_call, or function
+    matches = re.findall(r'(\{\s*"(?:action|tool|tool_call|function)"[\s\S]*?\})', content)
     for match in matches:
         try:
             parsed = parse_dict(json.loads(match))
@@ -400,17 +417,26 @@ class ConversationService:
                 })
                 yield f"data: {notice_payload}\n\n"
 
+            tools_schema = ToolRegistry.list_tools()
             request = ChatCompletionRequest(
                 messages=chat_messages,
                 model=current_model,
                 system_prompt=sys_prompt,
                 stream=True,
+                tools=tools_schema if tools_schema else None,
             )
 
             full_content: List[str] = []
             chunk_id = None
             had_error = False
             start_time = time.perf_counter()
+
+            # Tool calling accumulator & streaming buffer
+            streamed_tokens = False
+            native_tool_name: Optional[str] = None
+            native_tool_args_str = ""
+            buffered_chunks: List[str] = []
+            executed_tools_metadata: List[dict] = []
 
             try:
                 stream_iter = provider_adapter.chat_stream(request)
@@ -438,44 +464,98 @@ class ConversationService:
                     if chunk.id:
                         chunk_id = chunk.id
 
+                    # 1. Native tool calls handling
+                    if chunk.tool_calls:
+                        for tc in chunk.tool_calls:
+                            fn = tc.get("function", {})
+                            if fn.get("name"):
+                                native_tool_name = fn["name"]
+                            if fn.get("arguments"):
+                                native_tool_args_str += fn["arguments"]
+
+                    # 2. Text delta handling with buffering
                     if chunk.delta:
                         full_content.append(chunk.delta)
-                        chunk_payload = json.dumps({"type": "token", "delta": chunk.delta})
-                        yield f"data: {chunk_payload}\n\n"
+                        if native_tool_name:
+                            # Model is in native tool calling mode; never stream raw tool chunks
+                            continue
+
+                        if not streamed_tokens:
+                            buffered_chunks.append(chunk.delta)
+                            acc = "".join(buffered_chunks).strip()
+                            # Check if the output looks like the start of a tool call / JSON block
+                            is_json_start = (
+                                acc.startswith("{") or
+                                acc.startswith("```json") or
+                                acc.startswith("```") or
+                                '"action"' in acc or
+                                '"tool"' in acc
+                            )
+                            if not is_json_start and len(acc) >= 20:
+                                # Normal conversational message; flush buffer to user
+                                for bc in buffered_chunks:
+                                    yield f"data: {json.dumps({'type': 'token', 'delta': bc})}\n\n"
+                                streamed_tokens = True
+                                buffered_chunks.clear()
+                        else:
+                            # Already identified as normal conversation; stream directly
+                            yield f"data: {json.dumps({'type': 'token', 'delta': chunk.delta})}\n\n"
 
                 if had_error:
                     # Proceed to next fallback model in the chain
                     continue
 
-                # Stream round 1 finished
+                # Inspect round 1 output for tool call
                 assembled_content = "".join(full_content)
-                tool_call = extract_tool_call(assembled_content)
+                tool_call: Optional[Tuple[str, dict[str, Any]]] = None
+
+                if native_tool_name:
+                    try:
+                        parsed_native_args = json.loads(native_tool_args_str) if native_tool_args_str.strip() else {}
+                    except Exception:
+                        parsed_native_args = {}
+                    tool_call = (native_tool_name, parsed_native_args)
+                else:
+                    tool_call = extract_tool_call(assembled_content)
 
                 if tool_call:
-                    tool_name, tool_args = tool_call
-                    tool_call_notice = json.dumps({"type": "tool_call", "tool": tool_name, "arguments": tool_args})
-                    yield f"data: {tool_call_notice}\n\n"
+                    raw_tool_id, tool_args = tool_call
+                    resolved_tool = ToolRegistry.get(raw_tool_id)
+                    tool_id = getattr(resolved_tool, "id", raw_tool_id) if resolved_tool else raw_tool_id
+                    display_name = getattr(resolved_tool, "name", tool_id) if resolved_tool else tool_id
+
+                    # If any tokens were streamed before realizing it's a tool call, reset client buffer
+                    if streamed_tokens:
+                        yield f"data: {json.dumps({'type': 'reset_buffer'})}\n\n"
+
+                    # Emit structured progress notifications
+                    yield f"data: {json.dumps({'type': 'assistant_status', 'status': f'Running {display_name}...', 'tool': tool_id})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_id, 'display_name': display_name, 'arguments': tool_args})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_execution_started', 'tool_id': tool_id, 'tool_name': display_name})}\n\n"
 
                     # Execute tool via ToolExecutionEngine
                     exec_resp = await ToolExecutionEngine.execute_tool(
-                        tool_id=tool_name,
+                        tool_id=tool_id,
                         arguments=tool_args,
                         conversation_id=conversation_id,
                         db=db,
                     )
 
+                    yield f"data: {json.dumps({'type': 'tool_execution_completed', 'tool_id': tool_id, 'tool_name': display_name, 'success': exec_resp.success, 'duration_ms': exec_resp.duration_ms})}\n\n"
+
                     if exec_resp.status == ExecutionStatus.AWAITING_APPROVAL:
                         approval_notice = json.dumps({
                             "type": "approval_required",
                             "approval_id": exec_resp.approval_id,
-                            "tool": tool_name,
+                            "tool": tool_id,
+                            "display_name": display_name,
                             "reason": exec_resp.error,
                         })
                         yield f"data: {approval_notice}\n\n"
 
                         approval_text = (
-                            f"Action `{tool_name}` requires user approval before execution.\n\n"
-                            f"- **Tool**: `{tool_name}`\n"
+                            f"Action **{display_name}** (`{tool_id}`) requires user approval before execution.\n\n"
+                            f"- **Tool**: `{tool_id}`\n"
                             f"- **Reason**: {exec_resp.error or 'Action requires explicit human confirmation.'}\n"
                             f"- **Status**: Awaiting Approval\n\n"
                             f"Please approve or reject this request in the Approvals dashboard."
@@ -493,7 +573,8 @@ class ConversationService:
                             tokens_completion=len(approval_text) // 4,
                             metadata_json=json.dumps({
                                 "approval_id": exec_resp.approval_id,
-                                "tool_name": tool_name,
+                                "tool_id": tool_id,
+                                "tool_name": display_name,
                                 "status": "awaiting_approval",
                                 "latency_ms": latency_ms,
                             }),
@@ -516,24 +597,44 @@ class ConversationService:
                         break
 
                     else:
-                        # Tool executed (succeeded or failed)
+                        # Tool executed successfully or returned API error
+                        tool_out_data = exec_resp.result if exec_resp.success else {"error": exec_resp.error}
+                        executed_tools_metadata.append({
+                            "tool_id": tool_id,
+                            "tool_name": display_name,
+                            "arguments": tool_args,
+                            "success": exec_resp.success,
+                            "duration_ms": exec_resp.duration_ms,
+                            "result": tool_out_data,
+                        })
+
                         tool_res_notice = json.dumps({
                             "type": "tool_result",
-                            "tool": tool_name,
+                            "tool": tool_id,
+                            "display_name": display_name,
                             "success": exec_resp.success,
-                            "result": exec_resp.result,
+                            "result": tool_out_data,
                             "error": exec_resp.error,
                         })
                         yield f"data: {tool_res_notice}\n\n"
-                        yield f"data: {json.dumps({'type': 'reset_buffer'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'assistant_status', 'status': 'Formulating answer...'})}\n\n"
 
-                        # Round 2: Feed tool output to model to generate the natural-language response
-                        tool_out_data = exec_resp.result if exec_resp.success else {"error": exec_resp.error}
+                        # Round 2: Feed tool output to model to stream the natural-language response
                         round2_msgs = list(chat_messages)
-                        round2_msgs.append(ChatMessage(role=ChatMessageRole.ASSISTANT, content=assembled_content))
+                        round2_msgs.append(ChatMessage(
+                            role=ChatMessageRole.ASSISTANT,
+                            content=f"Invoked tool `{tool_id}` with parameters: {json.dumps(tool_args)}",
+                        ))
                         round2_msgs.append(ChatMessage(
                             role=ChatMessageRole.USER,
-                            content=f"Tool Execution Result for `{tool_name}`:\n<tool_output tool=\"{tool_name}\">\n{json.dumps(tool_out_data)}\n</tool_output>\nPlease explain the result clearly and directly to the user."
+                            content=(
+                                f"Tool `{tool_id}` execution output:\n"
+                                f"<tool_output tool=\"{tool_id}\">\n"
+                                f"{json.dumps(tool_out_data)}\n"
+                                f"</tool_output>\n\n"
+                                f"Based on the tool output above, provide a clear, direct, and complete final answer to the user in natural language. "
+                                f"Do NOT output raw JSON or code blocks containing internal tool actions. Respond naturally and conversationally."
+                            ),
                         ))
 
                         r2_req = ChatCompletionRequest(
@@ -553,7 +654,16 @@ class ConversationService:
                         except Exception as r2_err:
                             logger.warning(f"Round 2 explanation stream failed: {r2_err}")
 
-                        assembled_content = "".join(r2_content) or f"Executed `{tool_name}`: {json.dumps(tool_out_data)}"
+                        assembled_content = "".join(r2_content) or (
+                            f"I completed the action with `{display_name}`. Result: {json.dumps(tool_out_data)}"
+                        )
+
+                else:
+                    # No tool call detected in round 1; if any buffered chunks were held, flush them now
+                    if not streamed_tokens and buffered_chunks:
+                        for bc in buffered_chunks:
+                            yield f"data: {json.dumps({'type': 'token', 'delta': bc})}\n\n"
+                        streamed_tokens = True
 
                 # Stream succeeded!
                 streaming_succeeded = True
@@ -571,7 +681,9 @@ class ConversationService:
                     "pricing_category": pricing_cat,
                     "fallback_used": is_fallback_attempt,
                 }
-                if tool_call:
+                if executed_tools_metadata:
+                    metadata_dict["tool_calls"] = executed_tools_metadata
+                elif tool_call:
                     metadata_dict["tool_executed"] = tool_call[0]
 
                 assistant_msg = Message(

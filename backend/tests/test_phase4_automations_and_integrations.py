@@ -403,3 +403,58 @@ async def test_all_integration_tools_registered():
         tool_obj = ToolRegistry.get(tool_id)
         assert tool_obj.permission_level.value == perm, f"Tool '{tool_id}' expected {perm}, got {tool_obj.permission_level.value}"
 
+
+@pytest.mark.asyncio
+async def test_gmail_send_test_validation_and_preview():
+    """Verify Gmail send-test endpoint enforces email format validation and preview confirmation."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Invalid email format
+        bad_res = await client.post(
+            "/api/v1/integrations/google_gmail/send-test",
+            json={"recipient_email": "not-an-email"},
+        )
+        assert bad_res.status_code == 400
+
+        # Valid format, confirm=False (Preview mode)
+        # Note: In test DB, Google may not be connected, so either 422 or preview response
+        res = await client.post(
+            "/api/v1/integrations/google_gmail/send-test",
+            json={"recipient_email": "test@example.com", "confirm": False},
+        )
+        # If not connected, it cleanly reports connection requirement
+        if res.status_code == 400:
+            assert "connect" in res.json()["error"]["message"].lower() or "validation" in res.json()["error"]["message"].lower()
+        else:
+            assert res.status_code == 200
+            assert res.json()["preview"] is True
+            assert res.json()["confirmation_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_server_test_endpoint():
+    """Verify MCP test connection route returns structured connection diagnostic."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Create a mock MCP server
+        server_res = await client.post(
+            "/api/v1/tools/mcp/servers",
+            json={
+                "name": "Diagnostic Echo Server",
+                "server_type": "stdio",
+                "command": "cmd",
+                "args": ["/c", "echo", "{\"jsonrpc\": \"2.0\", \"id\": 0, \"result\": {\"capabilities\": {}}}"],
+            },
+        )
+        assert server_res.status_code == 201
+        server_id = server_res.json()["id"]
+
+        test_res = await client.post(f"/api/v1/tools/mcp/servers/{server_id}/test")
+        assert test_res.status_code == 200
+        data = test_res.json()
+        assert "latency_ms" in data
+        assert "server_id" in data
+
+        # Cleanup
+        await client.delete(f"/api/v1/tools/mcp/servers/{server_id}")
+

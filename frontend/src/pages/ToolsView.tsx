@@ -96,6 +96,27 @@ export const ToolsView: React.FC = () => {
     }
   };
 
+  const [testMcpId, setTestMcpId] = useState<string | null>(null);
+  const [mcpNotice, setMcpNotice] = useState<string | null>(null);
+
+  const handleTestMcp = async (serverId: string) => {
+    setTestMcpId(serverId);
+    setMcpNotice(null);
+    try {
+      const res = await toolService.testMcpServer(serverId);
+      if (res.success) {
+        setMcpNotice(`✓ Connected to ${res.name}: ${res.tools_count} tools discovered (${res.latency_ms}ms)`);
+      } else {
+        setMcpNotice(`⚠ ${res.name} test failed: ${res.error || res.message}`);
+      }
+      await fetchData();
+    } catch (err: any) {
+      setMcpNotice(`⚠ Error testing MCP server: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setTestMcpId(null);
+    }
+  };
+
   const handleCreateMcp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMcpName.trim()) return;
@@ -399,6 +420,13 @@ export const ToolsView: React.FC = () => {
             </button>
           </div>
 
+          {mcpNotice && (
+            <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-800 text-xs text-indigo-300 flex items-center justify-between">
+              <span>{mcpNotice}</span>
+              <button onClick={() => setMcpNotice(null)} className="text-slate-400 hover:text-white cursor-pointer ml-3">✕</button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {mcpServers.map((server) => (
               <div
@@ -446,6 +474,15 @@ export const ToolsView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    onClick={() => handleTestMcp(server.id)}
+                    disabled={testMcpId === server.id}
+                    className="py-1.5 px-3 rounded-lg text-xs bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                    title="Test MCP connection & probe capabilities"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${testMcpId === server.id ? 'animate-spin' : ''}`} />
+                    Test Connection
+                  </button>
                   <button
                     onClick={() => handleDiscoverMcp(server.id)}
                     className="flex-1 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"

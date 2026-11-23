@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 import time
+import re
 from pydantic import BaseModel, Field
 
 from app.core.logging import logger
@@ -157,6 +158,19 @@ class BaseTool(ABC):
                 latency_ms=latency,
             )
 
+    def to_openai_tool_schema(self) -> Dict[str, Any]:
+        """Returns standard OpenAI/OpenRouter function schema for the tool."""
+        # Clean function name to strictly match standard ^[a-zA-Z0-9_-]+$
+        clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", self.id)
+        return {
+            "type": "function",
+            "function": {
+                "name": clean_name,
+                "description": self.description,
+                "parameters": self.parameters_schema,
+            },
+        }
+
     def to_definition_response(self) -> ToolDefinitionResponse:
         return ToolDefinitionResponse(
             id=self.id,
@@ -190,54 +204,88 @@ class ToolRegistry:
 
     @classmethod
     def unregister(cls, name: str):
-        cls._tools.pop(name, None)
+        tool = cls._tools.pop(name, None)
+        if tool:
+            cls._tools.pop(tool.name, None)
+            if hasattr(tool, "id") and tool.id:
+                cls._tools.pop(tool.id, None)
         cls._disabled_tools.discard(name)
 
     @classmethod
     def get(cls, name: str) -> Optional[BaseTool]:
-        return cls._tools.get(name)
+        if not name:
+            return None
+        # 1. Exact match
+        if name in cls._tools:
+            return cls._tools[name]
+        # 2. Case-insensitive match
+        name_lower = name.strip().lower()
+        for k, v in cls._tools.items():
+            if k.lower() == name_lower:
+                return v
+        # 3. Normalized snake_case match (e.g. "Get Gmail Profile" -> "gmail_get_profile")
+        normalized = re.sub(r"[^a-zA-Z0-9]+", "_", name_lower).strip("_")
+        for k, v in cls._tools.items():
+            k_norm = re.sub(r"[^a-zA-Z0-9]+", "_", k.lower()).strip("_")
+            if k_norm == normalized or (hasattr(v, "id") and v.id == normalized):
+                return v
+        return None
 
     @classmethod
     def has(cls, name: str) -> bool:
-        return name in cls._tools
+        return cls.get(name) is not None
 
     @classmethod
     def is_enabled(cls, name: str) -> bool:
-        if name not in cls._tools:
+        tool = cls.get(name)
+        if not tool:
             return False
-        return name not in cls._disabled_tools and cls._tools[name].is_enabled
+        if tool.name in cls._disabled_tools or (hasattr(tool, "id") and tool.id in cls._disabled_tools):
+            return False
+        return tool.is_enabled
 
     @classmethod
     def set_enabled(cls, name: str, enabled: bool):
-        if name in cls._tools:
-            if enabled:
-                cls._disabled_tools.discard(name)
-            else:
-                cls._disabled_tools.add(name)
+        tool = cls.get(name)
+        if tool:
+            target_names = {tool.name}
+            if hasattr(tool, "id") and tool.id:
+                target_names.add(tool.id)
+            for t_name in target_names:
+                if enabled:
+                    cls._disabled_tools.discard(t_name)
+                else:
+                    cls._disabled_tools.add(t_name)
+
+    @classmethod
+    def _unique_tools(cls) -> List[BaseTool]:
+        """Returns unique tool instances without ID/name duplicates."""
+        seen = set()
+        unique = []
+        for tool in cls._tools.values():
+            tool_key = getattr(tool, "id", None) or tool.name
+            if tool_key not in seen:
+                seen.add(tool_key)
+                unique.append(tool)
+        return unique
 
     @classmethod
     def list_tools(cls) -> List[Dict[str, Any]]:
         """Returns OpenAI-compatible function definition schemas for enabled tools."""
         return [
-            {
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters_schema,
-                },
-            }
-            for t in cls._tools.values()
-            if cls.is_enabled(t.name)
+            t.to_openai_tool_schema()
+            for t in cls._unique_tools()
+            if cls.is_enabled(getattr(t, "id", t.name))
         ]
 
     @classmethod
     def list_all_definitions(cls) -> List[ToolDefinitionResponse]:
         """Returns rich tool definitions including permissions and status."""
         definitions = []
-        for t in cls._tools.values():
+        for t in cls._unique_tools():
             defn = t.to_definition_response()
-            if t.name in cls._disabled_tools:
+            tool_key = getattr(t, "id", t.name)
+            if tool_key in cls._disabled_tools or t.name in cls._disabled_tools:
                 defn.is_enabled = False
             definitions.append(defn)
         return definitions

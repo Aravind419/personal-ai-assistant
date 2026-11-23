@@ -125,6 +125,28 @@ export const automationService = {
     });
   },
 
+  async sendTestEmail(payload: {
+    recipient_email: string;
+    confirm: boolean;
+    subject?: string;
+    body_text?: string;
+  }): Promise<{
+    status: string;
+    preview: boolean;
+    confirmation_required: boolean;
+    recipient: string;
+    subject: string;
+    body_preview: string;
+    message_id?: string;
+    thread_id?: string;
+    message: string;
+  }> {
+    return apiClient('/integrations/google_gmail/send-test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Notifications
   async listNotifications(unreadOnly = false): Promise<NotificationItem[]> {
     const url = unreadOnly ? '/notifications?unread_only=true' : '/notifications';

@@ -126,6 +126,7 @@ interface SidebarProps {
   onSelectTab: (tab: NavTabId) => void;
   isOpen: boolean;
   onClose: () => void;
+  isCollapsed?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -133,6 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectTab,
   isOpen,
   onClose,
+  isCollapsed = false,
 }) => {
   return (
     <>
@@ -146,18 +148,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar container */}
       <aside
-        className={`fixed md:sticky top-0 left-0 z-50 md:z-20 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-200 ease-in-out md:translate-x-0 ${
+        className={`fixed md:sticky top-0 left-0 z-50 md:z-20 h-screen bg-slate-950 border-r border-slate-800 flex flex-col transition-all duration-200 ease-in-out md:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        } ${isCollapsed ? 'md:w-16 w-64' : 'w-64'}`}
       >
-        {/* Navigation list */}
-        <div className="p-3 border-b border-slate-800/80">
-          <div className="px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase text-slate-500">
-            Navigation Menu
-          </div>
+        {/* Navigation header */}
+        <div className={`p-3 border-b border-slate-800/80 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+          {!isCollapsed ? (
+            <div className="px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase text-slate-500">
+              Navigation Menu
+            </div>
+          ) : (
+            <div className="w-2 h-2 rounded-full bg-indigo-500" title="Navigation" />
+          )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1">
           {NAVIGATION_ITEMS.map((item) => {
             const isActive = currentTab === item.id;
             const icon = ICONS[item.iconName] || <LayoutDashboard className="w-4 h-4" />;
@@ -169,13 +175,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onSelectTab(item.id);
                   onClose();
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all group cursor-pointer ${
+                title={item.label}
+                className={`w-full flex items-center rounded-lg text-xs font-medium transition-all group cursor-pointer ${
+                  isCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                } ${
                   isActive
                     ? 'bg-indigo-600/15 text-indigo-300 border border-indigo-500/30'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className={`flex items-center gap-3 min-w-0 ${isCollapsed ? 'justify-center' : ''}`}>
                   <div
                     className={`${
                       isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'
@@ -183,34 +192,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     {icon}
                   </div>
-                  <span className="truncate">{item.label}</span>
+                  {!isCollapsed && <span className="truncate">{item.label}</span>}
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {!item.isImplementedInPhase0 && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-900 text-slate-500 border border-slate-800">
-                      {item.phasePlanned}
-                    </span>
-                  )}
-                  {isActive && <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />}
-                </div>
+                {!isCollapsed && (
+                  <div className="flex items-center gap-1.5">
+                    {!item.isImplementedInPhase0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-900 text-slate-500 border border-slate-800">
+                        {item.phasePlanned}
+                      </span>
+                    )}
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />}
+                  </div>
+                )}
               </button>
             );
           })}
         </nav>
 
         {/* Footer info */}
-        <div className="p-3 border-t border-slate-800/80 bg-slate-950/50">
-          <div className="px-2 py-2 rounded-lg bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Mode:</span>
-              <span className="text-slate-300 font-mono">Single-user</span>
+        <div className="p-2 border-t border-slate-800/80 bg-slate-950/50">
+          {!isCollapsed ? (
+            <div className="px-2 py-2 rounded-lg bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Mode:</span>
+                <span className="text-slate-300 font-mono">Single-user</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Active Phase:</span>
+                <span className="text-indigo-400 font-medium">Phase 4 Active</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Active Phase:</span>
-              <span className="text-indigo-400 font-medium">Phase 1 Active</span>
+          ) : (
+            <div className="flex justify-center py-2" title="Single-user Mode — Phase 4 Active">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
             </div>
-          </div>
+          )}
         </div>
       </aside>
     </>

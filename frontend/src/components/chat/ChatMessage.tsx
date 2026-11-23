@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   CheckCircle2,
   XCircle,
+  Wrench,
 } from 'lucide-react';
 
 import { toolService } from '../../services/toolService';
@@ -295,6 +296,51 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
             {message.isStreaming && (
               <span className="inline-block w-2 h-4 ml-1 bg-indigo-400 animate-pulse rounded-xs align-middle" />
             )}
+
+            {/* Structured Tool Execution History Card */}
+            {!isUser && message.metadata_json && (() => {
+              try {
+                const meta = JSON.parse(message.metadata_json);
+                if (!meta.tool_calls || !Array.isArray(meta.tool_calls) || meta.tool_calls.length === 0) return null;
+
+                return (
+                  <div className="my-2.5 space-y-1.5 not-prose">
+                    {meta.tool_calls.map((tc: any, i: number) => (
+                      <details key={i} className="group rounded-lg bg-slate-900/70 border border-slate-800 text-xs overflow-hidden">
+                        <summary className="px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-slate-800/40 select-none text-slate-300 font-medium transition-colors">
+                          <div className="flex items-center gap-2">
+                            <Wrench className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            <span>Tool: <strong className="text-slate-100">{tc.tool_name || tc.tool_id}</strong></span>
+                            {tc.duration_ms !== undefined && (
+                              <span className="text-[10px] text-slate-500 font-mono">({tc.duration_ms}ms)</span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${tc.success ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'}`}>
+                            {tc.success ? '✓ Succeeded' : '✗ Failed'}
+                          </span>
+                        </summary>
+                        <div className="p-3 border-t border-slate-800/60 bg-slate-950/60 space-y-2 text-[11px] font-mono">
+                          {tc.arguments && Object.keys(tc.arguments).length > 0 && (
+                            <div>
+                              <span className="text-slate-500 block mb-1">Parameters:</span>
+                              <pre className="p-2 rounded bg-slate-900 text-slate-300 overflow-x-auto">{JSON.stringify(tc.arguments, null, 2)}</pre>
+                            </div>
+                          )}
+                          {tc.result && (
+                            <div>
+                              <span className="text-slate-500 block mb-1">Result:</span>
+                              <pre className="p-2 rounded bg-slate-900 text-slate-300 max-h-36 overflow-y-auto">{JSON.stringify(tc.result, null, 2)}</pre>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                );
+              } catch {
+                return null;
+              }
+            })()}
 
             {/* Human-in-the-Loop In-Chat Approval Card */}
             {!isUser && message.metadata_json && (() => {

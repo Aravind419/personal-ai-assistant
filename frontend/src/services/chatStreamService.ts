@@ -16,9 +16,12 @@ export interface StreamCallbacks {
   onDone: (result: StreamDoneResult) => void;
   onError: (error: string) => void;
   onNotice?: (notice: string) => void;
-  onToolCall?: (call: { tool: string; arguments: any }) => void;
-  onToolResult?: (result: { tool: string; success: boolean; result?: any; error?: string }) => void;
-  onApprovalRequired?: (approval: { approval_id: string; tool: string; reason: string }) => void;
+  onAssistantStatus?: (status: { status: string; tool?: string }) => void;
+  onToolCall?: (call: { tool: string; display_name?: string; arguments: any }) => void;
+  onToolExecutionStarted?: (event: { tool_id: string; tool_name: string }) => void;
+  onToolExecutionCompleted?: (event: { tool_id: string; tool_name: string; success: boolean; duration_ms?: number }) => void;
+  onToolResult?: (result: { tool: string; display_name?: string; success: boolean; result?: any; error?: string }) => void;
+  onApprovalRequired?: (approval: { approval_id: string; tool: string; display_name?: string; reason: string }) => void;
   onResetBuffer?: () => void;
 }
 
@@ -98,11 +101,27 @@ export async function streamChatMessage(
             callbacks.onToken(payload.delta);
           } else if (payload.type === 'notice' && typeof payload.message === 'string') {
             callbacks.onNotice?.(payload.message);
+          } else if (payload.type === 'assistant_status') {
+            callbacks.onAssistantStatus?.({ status: payload.status, tool: payload.tool });
+          } else if (payload.type === 'tool_execution_started') {
+            callbacks.onToolExecutionStarted?.({ tool_id: payload.tool_id, tool_name: payload.tool_name });
+          } else if (payload.type === 'tool_execution_completed') {
+            callbacks.onToolExecutionCompleted?.({
+              tool_id: payload.tool_id,
+              tool_name: payload.tool_name,
+              success: payload.success,
+              duration_ms: payload.duration_ms,
+            });
           } else if (payload.type === 'tool_call') {
-            callbacks.onToolCall?.({ tool: payload.tool, arguments: payload.arguments });
+            callbacks.onToolCall?.({
+              tool: payload.tool,
+              display_name: payload.display_name,
+              arguments: payload.arguments,
+            });
           } else if (payload.type === 'tool_result') {
             callbacks.onToolResult?.({
               tool: payload.tool,
+              display_name: payload.display_name,
               success: payload.success,
               result: payload.result,
               error: payload.error,
@@ -111,6 +130,7 @@ export async function streamChatMessage(
             callbacks.onApprovalRequired?.({
               approval_id: payload.approval_id,
               tool: payload.tool,
+              display_name: payload.display_name,
               reason: payload.reason,
             });
           } else if (payload.type === 'reset_buffer') {

@@ -6,7 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.6.1] - 2026-11-23 - Real Integrations, Real Tools & Independent Service Architecture
+## [0.6.2] - 2026-11-23 - Critical Repair: Agent Tool Calling, Provider Function Calling, MCP Execution & Chat UI Redesign
+
+### Added & Fixed
+- **Provider-Independent Native Tool Calling & Orchestration Loop**:
+  - Implemented standard OpenAI/OpenRouter function-calling payload support (`tools: [...]`, `tool_choice: "auto"`) in `backend/app/providers/adapters/openrouter.py`.
+  - Added streaming delta tool-call parsing (`delta.tool_calls`) across SSE chunks.
+  - Resolved tool identifier vs. descriptive name mismatch: `BaseTool.to_openai_tool_schema()` enforces clean, sanitized tool IDs matching `^[a-zA-Z0-9_-]+$`, eliminating spaces and API rejection.
+  - Overhauled `ContextBuilder.format_tools_catalog()` and `TOOL_INSTRUCTIONS_SECTION` to format tools using their exact programmatic ID (`gmail_get_profile`, `get_system_time`, `calculate_expression`).
+  - Added smart fuzzy and canonical snake_case normalization lookup in `ToolRegistry.get()` preventing tool lookup misses.
+  - Eliminated raw tool JSON leakage in conversation bubbles: `stream_chat` buffers incoming chunks to detect tool call patterns; never emits internal tool arguments or call structures as `type: token`.
+  - Implemented automatic multi-round loop: tool executes via `ToolExecutionEngine`, emits progress notifications (`assistant_status`, `tool_execution_started`, `tool_execution_completed`), feeds execution results in Round 2, and streams a clean natural-language final response.
+- **Gmail Send-Test Workflow with Human Confirmation**:
+  - Added `POST /api/v1/integrations/google_gmail/send-test` endpoint enforcing RFC 5322 email regex validation, active connection verification, draft previewing, and explicit human confirmation before sending real emails.
+  - Added interactive "Send Test" action button on the Gmail card and a dedicated `Send Verified Test Email` modal in `IntegrationsView.tsx`.
+- **Runtime MCP Server Management & Diagnostics**:
+  - Added `POST /api/v1/tools/mcp/servers/{server_id}/test` endpoint executing protocol handshake initialization, discovering capabilities, measuring roundtrip latency in milliseconds, and reporting connection diagnostics.
+  - Added "Test Connection" button on MCP server cards in `ToolsView.tsx`.
+- **Chat UI & Responsive Sidebar Redesign**:
+  - Transformed the navigation sidebar into a responsive collapsible rail (`Sidebar.tsx`), collapsing to an icon-only rail (`w-16`) on desktop with hover tooltips and expand/collapse toggle buttons in `Header.tsx`.
+  - Upgraded Chat layout (`ChatView.tsx`) to a clean, spacious viewport with bottom-docked composer, auto-resizing text area, and live tool activity progress indicator.
+  - Implemented expandable structured Tool Execution History cards inside `ChatMessage.tsx` rendering execution latency, tool name, parameters, and results without cluttering conversational bubbles.
+- **Verification**:
+  - **131 passing automated backend pytest tests** (100% pass rate).
+  - Clean TypeScript compilation (`tsc -b`) and Vite production bundle generated in 1.84s.
 
 ### Added & Refactored
 - **Independent Integration Services Decomposition**:

@@ -1,6 +1,6 @@
 import type { HealthResponse } from '../../types/api';
 import { StatusBadge } from '../common/StatusBadge';
-import { Bot, RefreshCw, Server, Database, Menu } from 'lucide-react';
+import { Bot, RefreshCw, Server, Database, Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { NotificationBell } from '../common/NotificationBell';
 
 interface HeaderProps {
@@ -8,6 +8,8 @@ interface HeaderProps {
   isLoading: boolean;
   onRefresh: () => void;
   onToggleSidebar?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +17,8 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
   onRefresh,
   onToggleSidebar,
+  isCollapsed = false,
+  onToggleCollapse,
 }) => {
   const backendConnected = health !== null;
   const dbConnected = health?.database?.connected ?? false;
@@ -32,6 +36,17 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className="hidden md:flex p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label="Toggle sidebar collapse"
+          >
+            {isCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
+        )}
+
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
             <Bot className="w-5 h-5" />
@@ -40,10 +55,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm tracking-tight text-white">Personal AI Agent</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-indigo-950 text-indigo-300 border border-indigo-800/60">
-                Phase 0
+                Phase 4 Active
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-none mt-0.5">Engineering Foundation</p>
+            <p className="text-[11px] text-slate-400 leading-none mt-0.5">Autonomous Personal Agent & Real Integrations</p>
           </div>
         </div>
       </div>

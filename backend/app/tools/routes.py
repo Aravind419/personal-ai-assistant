@@ -1,5 +1,7 @@
 import json
 import uuid
+import time
+import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +24,7 @@ from app.tools.schemas import (
 )
 from app.tools.engine import ToolExecutionEngine
 from app.tools.approval_manager import ApprovalManager
-from app.tools.mcp import McpServerManager
+from app.tools.mcp import McpServerManager, McpClient
 from app.models.tool import ToolExecution, ToolApproval, McpServerConfiguration
 from app.core.exceptions import ResourceNotFoundException, ValidationException
 
@@ -219,6 +221,73 @@ async def discover_mcp_tools(server_id: str, db: AsyncSession = Depends(get_db))
         "status": server.status,
         "discovered_tools_count": count,
     }
+
+
+@tools_router.post("/mcp/servers/{server_id}/test", summary="Test MCP server connection and discover capabilities")
+async def test_mcp_server(server_id: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(McpServerConfiguration).where(McpServerConfiguration.id == server_id)
+    res = await db.execute(stmt)
+    server = res.scalar_one_or_none()
+    if not server:
+        raise ResourceNotFoundException(f"MCP server {server_id} not found.")
+
+    args = []
+    if server.args_json:
+        try:
+            args = json.loads(server.args_json)
+        except Exception:
+            pass
+
+    headers = {}
+    if server.headers_json:
+        try:
+            headers = json.loads(server.headers_json)
+        except Exception:
+            pass
+
+    client = McpClient(
+        server_type=server.server_type,
+        command=server.command,
+        args=args,
+        url=server.url,
+        headers=headers,
+        timeout=10.0,
+    )
+    start_time = time.perf_counter()
+    try:
+        await client.initialize()
+        tools_list = await client.list_tools()
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        server.status = "connected"
+        server.last_health_check = datetime.datetime.now(datetime.timezone.utc)
+        server.discovered_tools_count = len(tools_list)
+        server.last_error = None
+        await db.commit()
+        return {
+            "success": True,
+            "latency_ms": latency_ms,
+            "server_id": server.id,
+            "name": server.name,
+            "status": "connected",
+            "tools_count": len(tools_list),
+            "tools": [{"name": t.get("name"), "description": t.get("description")} for t in tools_list],
+            "message": f"Successfully connected to MCP server. Discovered {len(tools_list)} tools in {latency_ms}ms.",
+        }
+    except Exception as exc:
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        server.status = "error"
+        server.last_error = str(exc)
+        server.last_health_check = datetime.datetime.now(datetime.timezone.utc)
+        await db.commit()
+        return {
+            "success": False,
+            "latency_ms": latency_ms,
+            "server_id": server.id,
+            "name": server.name,
+            "status": "error",
+            "error": str(exc),
+            "message": f"Connection to MCP server failed: {str(exc)}",
+        }
 
 
 @tools_router.patch("/mcp/servers/{server_id}", response_model=McpServerResponse, summary="Update MCP server")

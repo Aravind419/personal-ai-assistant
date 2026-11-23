@@ -104,7 +104,14 @@ class OpenRouterProvider(BaseLLMProvider):
         if request.system_prompt:
             payload_messages.append({"role": "system", "content": request.system_prompt})
         for msg in request.messages:
-            payload_messages.append({"role": msg.role.value, "content": msg.content})
+            msg_dict: dict = {"role": msg.role.value, "content": msg.content or ""}
+            if msg.name:
+                msg_dict["name"] = msg.name
+            if msg.tool_call_id:
+                msg_dict["tool_call_id"] = msg.tool_call_id
+            if msg.tool_calls:
+                msg_dict["tool_calls"] = msg.tool_calls
+            payload_messages.append(msg_dict)
         return payload_messages
 
     async def test_connection(self) -> ProviderTestResult:
@@ -239,6 +246,9 @@ class OpenRouterProvider(BaseLLMProvider):
         }
         if request.max_tokens:
             payload["max_tokens"] = request.max_tokens
+        if request.tools:
+            payload["tools"] = request.tools
+            payload["tool_choice"] = "auto"
 
         max_retries = 2
         for attempt in range(max_retries + 1):
@@ -258,6 +268,7 @@ class OpenRouterProvider(BaseLLMProvider):
                         content=content,
                         finish_reason=choice.get("finish_reason"),
                         usage=data.get("usage"),
+                        tool_calls=message_obj.get("tool_calls"),
                     )
             except (httpx.ConnectError, httpx.NetworkError, socket.gaierror) as net_err:
                 if attempt < max_retries:
@@ -291,6 +302,9 @@ class OpenRouterProvider(BaseLLMProvider):
         }
         if request.max_tokens:
             payload["max_tokens"] = request.max_tokens
+        if request.tools:
+            payload["tools"] = request.tools
+            payload["tool_choice"] = "auto"
 
         max_retries = 2
         for attempt in range(max_retries + 1):
@@ -315,13 +329,16 @@ class OpenRouterProvider(BaseLLMProvider):
                                 try:
                                     chunk_json = json.loads(data_str)
                                     choice = chunk_json.get("choices", [{}])[0]
-                                    delta_content = choice.get("delta", {}).get("content", "")
+                                    delta_obj = choice.get("delta", {})
+                                    delta_content = delta_obj.get("content", "")
+                                    tool_calls = delta_obj.get("tool_calls")
                                     finish_reason = choice.get("finish_reason")
-                                    if delta_content or finish_reason:
+                                    if delta_content or tool_calls or finish_reason:
                                         yield ChatStreamChunk(
                                             id=chunk_json.get("id"),
                                             delta=delta_content or "",
                                             finish_reason=finish_reason,
+                                            tool_calls=tool_calls,
                                         )
                                 except json.JSONDecodeError:
                                     continue

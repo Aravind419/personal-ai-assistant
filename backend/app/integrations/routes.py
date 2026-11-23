@@ -1,9 +1,10 @@
+import re
 import json
 import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query, status, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -16,6 +17,7 @@ from app.integrations.base import (
     BaseIntegrationService,
 )
 from app.integrations.google_auth import GoogleOAuthHandler
+from app.integrations.google_client import GoogleApiClient
 from app.models.automation import IntegrationConnection, IntegrationSyncLog
 from app.core.exceptions import ResourceNotFoundException, ValidationException, SecurityException
 from app.core.config import settings
@@ -376,3 +378,96 @@ async def sync_integration_data(
         items_synced=items_count,
         details=meta or {},
     )
+
+
+class GmailSendTestRequest(BaseModel):
+    recipient_email: str = Field(..., description="Destination recipient email address")
+    confirm: bool = Field(False, description="Explicit confirmation flag to execute sending")
+    subject: Optional[str] = Field(None, description="Optional custom subject line")
+    body_text: Optional[str] = Field(None, description="Optional custom body text")
+
+
+class GmailSendTestResponse(BaseModel):
+    status: str
+    preview: bool
+    confirmation_required: bool
+    recipient: str
+    subject: str
+    body_preview: str
+    message_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    message: str
+
+
+@router.post("/google_gmail/send-test", response_model=GmailSendTestResponse, summary="Send a verified test email via connected Gmail")
+async def send_test_email(
+    payload: GmailSendTestRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Sends a verified test email via official Gmail API.
+    Enforces email validation, connected status verification, and human confirmation gating.
+    """
+    clean_email = payload.recipient_email.strip()
+    email_regex = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    if not re.match(email_regex, clean_email):
+        raise ValidationException(f"Invalid recipient email address format: '{clean_email}'")
+
+    token = await IntegrationManager.get_valid_access_token(db, "google")
+    if not token:
+        raise ValidationException(
+            "Gmail is not connected. Please connect your Google account in Integrations before sending a test email."
+        )
+
+    subj = payload.subject or "Personal AI Assistant — Verified Integration Test Email"
+    body = payload.body_text or (
+        f"Hello,\n\n"
+        f"This is a verified test email sent directly from your Personal AI Assistant via the official Google Gmail REST API.\n\n"
+        f"Time: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+        f"Status: Gmail Integration Verified\n\n"
+        f"Best regards,\nPersonal AI Assistant"
+    )
+
+    if not payload.confirm:
+        # Return draft preview with explicit confirmation requirement
+        return GmailSendTestResponse(
+            status="awaiting_confirmation",
+            preview=True,
+            confirmation_required=True,
+            recipient=clean_email,
+            subject=subj,
+            body_preview=body,
+            message="Confirmation required before sending real email. Set confirm=true to execute.",
+        )
+
+    try:
+        client = GoogleApiClient(token)
+        res = await client.gmail_send_message(to=clean_email, subject=subj, body_text=body)
+        
+        # Log to SyncLog for auditing
+        conn = await IntegrationManager.get_connection(db, "google")
+        if conn:
+            sync_log = IntegrationSyncLog(
+                connection_id=conn.id,
+                service_name="google_gmail_send_test",
+                status="succeeded",
+                items_synced=1,
+                error_details=f"Sent test email to {clean_email} (id: {res.get('id')})",
+            )
+            db.add(sync_log)
+            await db.commit()
+
+        return GmailSendTestResponse(
+            status="sent",
+            preview=False,
+            confirmation_required=False,
+            recipient=clean_email,
+            subject=subj,
+            body_preview=body,
+            message_id=res.get("id"),
+            thread_id=res.get("threadId"),
+            message=f"Test email successfully sent to {clean_email}.",
+        )
+    except Exception as exc:
+        logger.error(f"Failed to send test email via Gmail: {exc}")
+        raise ValidationException(f"Gmail API error while sending test email: {str(exc)}")

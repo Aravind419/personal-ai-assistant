@@ -80,15 +80,17 @@ class ContextBuilder:
     TOOL_INSTRUCTIONS_SECTION = (
         "### Tool Execution Capabilities\n"
         "You have access to registered tools that can read files, evaluate calculations, process text, check system time, and interact with services.\n"
-        "When an action requires a tool, output a tool invocation JSON block:\n"
+        "When an action requires a tool, call the tool by its exact ID. If your model supports native function calling, invoke the tool natively. "
+        "Otherwise, output ONLY a tool invocation block:\n"
         "```json\n"
-        '{"action": "call_tool", "tool": "<tool_name>", "arguments": {<arguments>}}\n'
+        '{"action": "call_tool", "tool": "<tool_id>", "arguments": {<arguments>}}\n'
         "```\n"
         "Directives:\n"
-        "1. Only call tools present in the Available Tools registry.\n"
+        "1. Always use the exact tool ID (e.g. `get_system_time`, `gmail_get_profile`, `calculate_expression`).\n"
         "2. Ensure arguments strictly adhere to the expected parameters schema.\n"
-        "3. For actions requiring human approval (sensitive or critical actions like writing or deleting files), explain what action you intend to take.\n"
-        "4. Never invent or claim an action succeeded unless you have received a successful `<tool_output>` execution result."
+        "3. Never output internal tool JSON directly into conversational answers to the user.\n"
+        "4. When you receive a `<tool_output>` block, summarize the result naturally and conversationally for the user.\n"
+        "5. Never invent or claim an action succeeded unless you have received a successful `<tool_output>` execution result."
     )
 
 
@@ -148,7 +150,7 @@ class ContextBuilder:
         lines = []
         for t in enabled_tools:
             approval_tag = " [REQUIRES_APPROVAL]" if t.requires_approval else " [AUTO_PERMITTED]"
-            lines.append(f"- Tool: `{t.name}` ({t.permission_level.value}){approval_tag}")
+            lines.append(f"- Tool ID: `{t.id}` (Name: \"{t.name}\", {t.permission_level.value}){approval_tag}")
             lines.append(f"  Description: {t.description}")
             lines.append(f"  Parameters: `{json.dumps(t.parameters_schema)}`")
         return "\n".join(lines)
